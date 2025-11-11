@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import '../models/chat.dart';
 import '../services/chat_service.dart';
 import '../widgets/chat_list_item.dart';
@@ -33,8 +33,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading chats: $e')),
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('Error'),
+            content: Text('Error loading chats: $e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
         );
       }
     }
@@ -43,7 +53,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   void _navigateToChatDetail(Chat chat) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      CupertinoPageRoute(
         builder: (context) => ChatDetailScreen(
           chat: chat,
           chatService: _chatService,
@@ -52,65 +62,88 @@ class _ChatListScreenState extends State<ChatListScreen> {
     ).then((_) => _loadChats()); // Reload chats when returning
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Cursor Chats'),
+  void _showNewChatDialog() {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('New Chat'),
+        content: const Text('New chat creation coming soon!'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadChats,
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(context),
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoPageScaffold(
+      backgroundColor: CupertinoTheme.of(context).brightness == Brightness.dark
+          ? CupertinoColors.black
+          : CupertinoColors.systemGroupedBackground.resolveFrom(context),
+      navigationBar: CupertinoNavigationBar(
+        middle: const Text('Cursor Chats'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              child: const Icon(CupertinoIcons.refresh),
+              onPressed: _loadChats,
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              child: const Icon(CupertinoIcons.add),
+              onPressed: _showNewChatDialog,
+            ),
+          ],
+        ),
+      ),
+      child: _isLoading
+          ? const Center(child: CupertinoActivityIndicator())
           : _chats.isEmpty
-              ? Center(
+              ? const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        Icons.chat_bubble_outline,
+                        CupertinoIcons.chat_bubble,
                         size: 64,
-                        color: Colors.grey[400],
+                        color: CupertinoColors.systemGrey,
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: 16),
                       Text(
                         'No chats yet',
                         style: TextStyle(
                           fontSize: 18,
-                          color: Colors.grey[600],
+                          color: CupertinoColors.systemGrey,
                         ),
                       ),
                     ],
                   ),
                 )
-              : RefreshIndicator(
-                  onRefresh: _loadChats,
-                  child: ListView.builder(
-                    itemCount: _chats.length,
-                    itemBuilder: (context, index) {
-                      final chat = _chats[index];
-                      return ChatListItem(
-                        chat: chat,
-                        onTap: () => _navigateToChatDetail(chat),
-                      );
-                    },
-                  ),
+              : CustomScrollView(
+                  slivers: [
+                    CupertinoSliverRefreshControl(
+                      onRefresh: _loadChats,
+                    ),
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final chat = _chats[index];
+                          return ChatListItem(
+                            chat: chat,
+                            onTap: () => _navigateToChatDetail(chat),
+                          );
+                        },
+                        childCount: _chats.length,
+                      ),
+                    ),
+                  ],
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // TODO: Implement new chat creation dialog
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('New chat creation coming soon!'),
-            ),
-          );
-        },
-        child: const Icon(Icons.add),
-      ),
     );
   }
 }

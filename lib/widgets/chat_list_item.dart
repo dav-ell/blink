@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 import '../models/chat.dart';
 
@@ -15,11 +15,11 @@ class ChatListItem extends StatelessWidget {
   Color _getStatusColor(ChatStatus status) {
     switch (status) {
       case ChatStatus.active:
-        return Colors.green;
+        return CupertinoColors.systemGreen;
       case ChatStatus.inactive:
-        return Colors.orange;
+        return CupertinoColors.systemOrange;
       case ChatStatus.completed:
-        return Colors.blue;
+        return CupertinoColors.systemBlue;
     }
   }
 
@@ -42,77 +42,122 @@ class ChatListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: _getStatusColor(chat.status).withOpacity(0.2),
-          child: Icon(
-            Icons.chat_bubble_outline,
-            color: _getStatusColor(chat.status),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemGrey5.resolveFrom(context),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: CupertinoColors.separator.resolveFrom(context),
+            width: 0.5,
           ),
         ),
-        title: Text(
-          chat.title,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 4),
-            Text(
-              chat.preview,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 14,
+            // Leading icon
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: _getStatusColor(chat.status).withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                CupertinoIcons.chat_bubble_fill,
+                color: _getStatusColor(chat.status),
+                size: 24,
               ),
             ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(chat.status).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
+            const SizedBox(width: 12),
+            // Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title and timestamp
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          chat.title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 17,
+                            color: CupertinoColors.label.resolveFrom(context),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _formatTimestamp(chat.lastMessageAt),
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                        ),
+                      ),
+                    ],
                   ),
-                  child: Text(
-                    chat.status.name,
+                  const SizedBox(height: 4),
+                  // Preview
+                  Text(
+                    chat.preview,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: _getStatusColor(chat.status),
+                      color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                      fontSize: 15,
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${chat.messageCount} messages',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
+                  const SizedBox(height: 8),
+                  // Status and message count
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(chat.status).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          chat.status.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: _getStatusColor(chat.status),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${chat.messageCount} messages',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                ],
+              ),
+            ),
+            // Chevron
+            Padding(
+              padding: const EdgeInsets.only(left: 8, top: 12),
+              child: Icon(
+                CupertinoIcons.chevron_right,
+                color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                size: 16,
+              ),
             ),
           ],
         ),
-        trailing: Text(
-          _formatTimestamp(chat.lastMessageAt),
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[500],
-          ),
-        ),
-        isThreeLine: true,
       ),
     );
   }

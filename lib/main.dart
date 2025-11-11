@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'screens/chat_list_screen.dart';
 
 void main() {
@@ -10,16 +10,13 @@ class BlinkApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return CupertinoApp(
       title: 'Blink - Cursor Chat Manager',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          centerTitle: false,
-          elevation: 2,
-        ),
+      theme: const CupertinoThemeData(
+        primaryColor: CupertinoColors.systemBlue,
+        barBackgroundColor: CupertinoColors.systemBackground,
+        scaffoldBackgroundColor: CupertinoColors.systemGroupedBackground,
       ),
       home: const ChatListScreen(),
     );

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import '../models/chat.dart';
 import '../models/message.dart';
 import '../services/chat_service.dart';
@@ -67,20 +67,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       _scrollToBottom();
 
       // TODO: In the real implementation, this would trigger Cursor IDE
-      // to process the message and respond. For now, we'll show a note.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Message sent. In production, this would trigger Cursor IDE.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      // to process the message and respond.
     } catch (e) {
       setState(() => _isSending = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error sending message: $e')),
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('Error'),
+            content: Text('Error sending message: $e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
         );
       }
     }
@@ -89,37 +91,90 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Color _getStatusColor(ChatStatus status) {
     switch (status) {
       case ChatStatus.active:
-        return Colors.green;
+        return CupertinoColors.systemGreen;
       case ChatStatus.inactive:
-        return Colors.orange;
+        return CupertinoColors.systemOrange;
       case ChatStatus.completed:
-        return Colors.blue;
+        return CupertinoColors.systemBlue;
     }
+  }
+
+  void _showActionSheet() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => CupertinoActionSheet(
+        title: const Text('Chat Actions'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Implement export
+              showCupertinoDialog(
+                context: context,
+                builder: (context) => CupertinoAlertDialog(
+                  title: const Text('Export'),
+                  content: const Text('Export chat coming soon!'),
+                  actions: [
+                    CupertinoDialogAction(
+                      child: const Text('OK'),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              );
+            },
+            child: const Text('Export Chat'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Implement share
+            },
+            child: const Text('Share'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Implement archive
+            },
+            child: const Text('Archive'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return CupertinoPageScaffold(
+      backgroundColor: CupertinoTheme.of(context).brightness == Brightness.dark
+          ? CupertinoColors.black
+          : CupertinoColors.systemBackground.resolveFrom(context),
+      navigationBar: CupertinoNavigationBar(
+        middle: Column(
           children: [
             Text(_chat.title),
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 8,
-                  height: 8,
+                  width: 6,
+                  height: 6,
                   decoration: BoxDecoration(
                     color: _getStatusColor(_chat.status),
                     shape: BoxShape.circle,
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 Text(
                   _chat.status.name,
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.normal,
                   ),
                 ),
@@ -127,51 +182,32 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
           ],
         ),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              // TODO: Implement menu actions
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$value coming soon!')),
-              );
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'Export',
-                child: Text('Export chat'),
-              ),
-              const PopupMenuItem(
-                value: 'Share',
-                child: Text('Share'),
-              ),
-              const PopupMenuItem(
-                value: 'Archive',
-                child: Text('Archive'),
-              ),
-            ],
-          ),
-        ],
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          child: const Icon(CupertinoIcons.ellipsis_circle),
+          onPressed: _showActionSheet,
+        ),
       ),
-      body: Column(
+      child: Column(
         children: [
           // Messages list
           Expanded(
             child: _chat.messages.isEmpty
-                ? Center(
+                ? const Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          Icons.chat_outlined,
+                          CupertinoIcons.chat_bubble_2,
                           size: 64,
-                          color: Colors.grey[400],
+                          color: CupertinoColors.systemGrey,
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: 16),
                         Text(
                           'No messages yet',
                           style: TextStyle(
                             fontSize: 18,
-                            color: Colors.grey[600],
+                            color: CupertinoColors.systemGrey,
                           ),
                         ),
                       ],
@@ -190,36 +226,35 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           // Input area
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  offset: const Offset(0, -2),
-                  blurRadius: 4,
-                  color: Colors.black.withOpacity(0.1),
+              color: CupertinoTheme.of(context).brightness == Brightness.dark
+                  ? CupertinoColors.black
+                  : CupertinoColors.systemBackground.resolveFrom(context),
+              border: Border(
+                top: BorderSide(
+                  color: CupertinoColors.separator.resolveFrom(context),
+                  width: 0.5,
                 ),
-              ],
+              ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: SafeArea(
               child: Row(
                 children: [
                   Expanded(
-                    child: TextField(
+                    child: CupertinoTextField(
                       controller: _messageController,
-                      decoration: InputDecoration(
-                        hintText: _chat.status == ChatStatus.active
-                            ? 'Type a message to Cursor...'
-                            : 'Reactivate chat to send messages',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide(color: Colors.grey[300]!),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 10,
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey[100],
+                      placeholder: _chat.status == ChatStatus.active
+                          ? 'Message to Cursor...'
+                          : 'Reactivate chat to send messages',
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: CupertinoTheme.of(context).brightness == Brightness.dark
+                            ? CupertinoColors.systemGrey5.resolveFrom(context)
+                            : CupertinoColors.systemGrey6.resolveFrom(context),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       maxLines: null,
                       textCapitalization: TextCapitalization.sentences,
@@ -228,22 +263,30 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  CircleAvatar(
-                    backgroundColor: Colors.blue,
-                    child: _isSending
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _isSending ? null : _sendMessage,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: _isSending
+                            ? CupertinoColors.systemGrey
+                            : CupertinoColors.activeBlue,
+                        shape: BoxShape.circle,
+                      ),
+                      child: _isSending
+                          ? const Center(
+                              child: CupertinoActivityIndicator(
+                                color: CupertinoColors.white,
+                              ),
+                            )
+                          : const Icon(
+                              CupertinoIcons.arrow_up,
+                              color: CupertinoColors.white,
+                              size: 20,
                             ),
-                          )
-                        : IconButton(
-                            icon: const Icon(Icons.send, color: Colors.white),
-                            onPressed: _sendMessage,
-                            padding: EdgeInsets.zero,
-                          ),
+                    ),
                   ),
                 ],
               ),

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 import '../models/message.dart';
 
@@ -22,10 +22,12 @@ class MessageBubble extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: isUser ? Colors.blue[500] : Colors.grey[300],
-          borderRadius: BorderRadius.circular(16).copyWith(
+          color: isUser
+              ? CupertinoColors.activeBlue.resolveFrom(context)
+              : CupertinoColors.systemGrey5.resolveFrom(context),
+          borderRadius: BorderRadius.circular(20).copyWith(
             bottomRight: isUser ? const Radius.circular(4) : null,
             bottomLeft: !isUser ? const Radius.circular(4) : null,
           ),
@@ -40,9 +42,9 @@ class MessageBubble extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.smart_toy,
-                      size: 14,
-                      color: Colors.grey[700],
+                      CupertinoIcons.rays,
+                      size: 13,
+                      color: CupertinoColors.secondaryLabel.resolveFrom(context),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -50,7 +52,7 @@ class MessageBubble extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Colors.grey[700],
+                        color: CupertinoColors.secondaryLabel.resolveFrom(context),
                       ),
                     ),
                   ],
@@ -59,8 +61,10 @@ class MessageBubble extends StatelessWidget {
             Text(
               message.content,
               style: TextStyle(
-                fontSize: 15,
-                color: isUser ? Colors.white : Colors.black87,
+                fontSize: 16,
+                color: isUser
+                    ? CupertinoColors.white
+                    : CupertinoColors.label.resolveFrom(context),
               ),
             ),
             const SizedBox(height: 4),
@@ -68,7 +72,9 @@ class MessageBubble extends StatelessWidget {
               timeFormat.format(message.timestamp),
               style: TextStyle(
                 fontSize: 11,
-                color: isUser ? Colors.white70 : Colors.grey[600],
+                color: isUser
+                    ? CupertinoColors.white.withOpacity(0.7)
+                    : CupertinoColors.secondaryLabel.resolveFrom(context),
               ),
             ),
           ],
