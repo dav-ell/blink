@@ -1,0 +1,11 @@
+# Cursor Chat REST API Dependencies
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.10.0
+
+# Testing Dependencies
+pytest>=9.0.0
+pytest-html>=4.1.0
+requests>=2.32.0
+

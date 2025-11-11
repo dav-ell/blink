@@ -11,6 +11,11 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   intl: ^0.18.1
+  http: ^1.1.0
+  provider: ^6.1.1
+  flutter_markdown: ^0.6.18
+  shimmer: ^3.0.0
+  flutter_syntax_view: ^4.0.0
 
 dev_dependencies:
   flutter_test:

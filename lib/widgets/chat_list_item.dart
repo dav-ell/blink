@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/chat.dart';
+import '../utils/theme.dart';
 
 class ChatListItem extends StatelessWidget {
   final Chat chat;
@@ -12,108 +13,252 @@ class ChatListItem extends StatelessWidget {
     required this.onTap,
   });
 
-  Color _getStatusColor(ChatStatus status) {
-    switch (status) {
-      case ChatStatus.active:
-        return Colors.green;
-      case ChatStatus.inactive:
-        return Colors.orange;
-      case ChatStatus.completed:
-        return Colors.blue;
-    }
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacingMedium,
+        vertical: AppTheme.spacingSmall,
+      ),
+      decoration: BoxDecoration(
+        gradient: AppTheme.cardGradient,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        boxShadow: AppTheme.cardShadow,
+        border: Border.all(
+          color: Colors.black.withOpacity(0.05),
+          width: 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          child: Padding(
+            padding: const EdgeInsets.all(AppTheme.spacingMedium),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        chat.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 17,
+                          color: AppTheme.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    _buildStatusBadge(),
+                  ],
+                ),
+
+                const SizedBox(height: AppTheme.spacingSmall),
+
+                // Preview text
+                if (chat.preview.isNotEmpty)
+                  Text(
+                    chat.preview,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppTheme.textSecondary,
+                      height: 1.4,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+
+                const SizedBox(height: AppTheme.spacingMedium),
+
+                // Stats Row
+                Wrap(
+                  spacing: AppTheme.spacingMedium,
+                  runSpacing: AppTheme.spacingXSmall,
+                  children: [
+                    _buildStatChip(
+                      Icons.message_outlined,
+                      '${chat.messageCount}',
+                      AppTheme.primary,
+                    ),
+                    if (chat.totalLinesAdded > 0)
+                      _buildStatChip(
+                        Icons.add,
+                        '+${chat.totalLinesAdded}',
+                        AppTheme.activeStatus,
+                      ),
+                    if (chat.totalLinesRemoved > 0)
+                      _buildStatChip(
+                        Icons.remove,
+                        '-${chat.totalLinesRemoved}',
+                        AppTheme.todoColor,
+                      ),
+                    _buildStatChip(
+                      Icons.access_time,
+                      _formatTime(chat.lastMessageAt),
+                      AppTheme.textTertiary,
+                    ),
+                  ],
+                ),
+
+                // Archive/Draft badges
+                if (chat.isArchived || chat.isDraft)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppTheme.spacingSmall),
+                    child: Row(
+                      children: [
+                        if (chat.isArchived)
+                          _buildBadge('Archived', Icons.archive),
+                        if (chat.isDraft)
+                          _buildBadge('Draft', Icons.edit),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
-  String _formatTimestamp(DateTime timestamp) {
+  Widget _buildStatusBadge() {
+    Color color;
+    String label;
+    
+    switch (chat.status) {
+      case ChatStatus.active:
+        color = AppTheme.activeStatus;
+        label = 'Active';
+        break;
+      case ChatStatus.inactive:
+        color = AppTheme.inactiveStatus;
+        label = 'Inactive';
+        break;
+      case ChatStatus.completed:
+        color = AppTheme.completedStatus;
+        label = 'Completed';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacingSmall,
+        vertical: AppTheme.spacingXSmall,
+      ),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacingXSmall),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatChip(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacingSmall,
+        vertical: AppTheme.spacingXSmall,
+      ),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: AppTheme.spacingXSmall),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBadge(String label, IconData icon) {
+    return Container(
+      margin: const EdgeInsets.only(right: AppTheme.spacingSmall),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacingSmall,
+        vertical: AppTheme.spacingXSmall,
+      ),
+      decoration: BoxDecoration(
+        color: AppTheme.archivedStatus.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 12,
+            color: AppTheme.archivedStatus,
+          ),
+          const SizedBox(width: AppTheme.spacingXSmall),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.archivedStatus,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime timestamp) {
     final now = DateTime.now();
     final difference = now.difference(timestamp);
 
-    if (difference.inMinutes < 1) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
+    if (difference.inDays > 7) {
       return DateFormat('MMM d').format(timestamp);
+    } else if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: _getStatusColor(chat.status).withOpacity(0.2),
-          child: Icon(
-            Icons.chat_bubble_outline,
-            color: _getStatusColor(chat.status),
-          ),
-        ),
-        title: Text(
-          chat.title,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Text(
-              chat.preview,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(chat.status).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    chat.status.name,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: _getStatusColor(chat.status),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${chat.messageCount} messages',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        trailing: Text(
-          _formatTimestamp(chat.lastMessageAt),
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[500],
-          ),
-        ),
-        isThreeLine: true,
-      ),
-    );
   }
 }
