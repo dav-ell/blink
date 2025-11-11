@@ -1,0 +1,31 @@
+---
+description: Guidelines for documentation creation
+---
+
+# Documentation Guidelines
+
+## Minimize Documentation Files
+
+**CRITICAL**: Do NOT create excessive documentation files. Aim for **MAXIMUM 1 documentation file per task**.
+
+### Rules:
+1. **Default behavior**: Complete tasks WITHOUT creating any documentation files unless explicitly requested
+2. **If documentation is needed**: Create AT MOST 1 comprehensive document instead of multiple files
+3. **Avoid documentation proliferation**: Do NOT create multiple summary files, analysis files, guide files, or report files for a single task
+4. **Focus on code**: Prioritize writing functional code over writing documentation about the code
+
+### Anti-patterns to AVOID:
+- Creating multiple `.md` files like `SUMMARY.md`, `ANALYSIS.md`, `GUIDE.md`, `REPORT.md`, etc. for one task
+- Writing documentation as the primary output when code changes were requested
+- Getting "stuck" in documentation mode, creating file after file
+- Creating separate files for summaries, findings, next steps, etc.
+
+### When to create documentation:
+- User explicitly requests documentation
+- Creating a README for a new standalone project/module
+- Complex architectural decisions that need to be recorded (consolidate into ONE file)
+
+### Example:
+❌ BAD: User asks to implement feature X → You create: `IMPLEMENTATION.md`, `SUMMARY.md`, `NEXT_STEPS.md`, `FINDINGS.md`
+✅ GOOD: User asks to implement feature X → You implement the feature in code (maybe create 1 doc if truly needed)
+
