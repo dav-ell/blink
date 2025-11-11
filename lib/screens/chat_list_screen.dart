@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 import '../models/chat.dart';
 import '../services/chat_service.dart';
@@ -6,6 +8,7 @@ import '../widgets/chat_list_item.dart';
 import '../widgets/search_bar.dart' as custom;
 import '../widgets/filter_sheet.dart';
 import '../utils/theme.dart';
+import '../providers/theme_provider.dart';
 import 'chat_detail_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
@@ -63,13 +66,25 @@ class _ChatListScreenState extends State<ChatListScreen> {
         _isConnected = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('Error'),
             content: Text('Error loading chats: $e'),
-            action: SnackBarAction(
-              label: 'Retry',
-              onPressed: _loadChats,
-            ),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('Cancel'),
+                onPressed: () => Navigator.pop(context),
+              ),
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                child: const Text('Retry'),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _loadChats();
+                },
+              ),
+            ],
           ),
         );
       }
@@ -112,22 +127,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   void _showFilterSheet() {
-    showModalBottomSheet(
+    showCupertinoModalPopup(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.9,
-        builder: (_, controller) => FilterSheet(
-          filters: _filters,
-          onApply: (filters) {
-            setState(() {
-              _loadChats();
-            });
-          },
-        ),
+      builder: (context) => FilterSheet(
+        filters: _filters,
+        onApply: (filters) {
+          setState(() {
+            _loadChats();
+          });
+        },
       ),
     );
   }
@@ -135,7 +143,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   void _navigateToChatDetail(Chat chat) async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
+      CupertinoPageRoute(
         builder: (context) => ChatDetailScreen(
           chat: chat,
           chatService: _chatService,
@@ -147,84 +155,136 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: const Text('Cursor Chats'),
-        actions: [
-          if (!_isConnected)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Chip(
-                avatar: const Icon(
-                  Icons.cloud_off,
-                  size: 16,
-                  color: AppTheme.todoColor,
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+
+    return CupertinoPageScaffold(
+      backgroundColor: isDark ? AppTheme.backgroundDark : AppTheme.background,
+      navigationBar: CupertinoNavigationBar(
+        backgroundColor: (isDark ? AppTheme.surfaceDark : AppTheme.surface).withOpacity(0.95),
+        border: null,
+        middle: const Text('Cursor Chats'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!_isConnected)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.todoColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                label: const Text(
-                  'Offline',
-                  style: TextStyle(fontSize: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      CupertinoIcons.cloud,
+                      size: 14,
+                      color: AppTheme.todoColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Offline',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.todoColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-                backgroundColor: AppTheme.todoColor.withOpacity(0.1),
+              ),
+            if (!_isConnected)
+              const SizedBox(width: 8),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _loadChats,
+              child: Icon(
+                CupertinoIcons.refresh,
+                color: isDark ? AppTheme.primaryLight : AppTheme.primary,
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadChats,
-          ),
-        ],
+            Consumer<ThemeProvider>(
+              builder: (context, themeProvider, child) {
+                return CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () {
+                    themeProvider.toggleTheme();
+                  },
+                  child: Icon(
+                    themeProvider.isDarkMode
+                        ? CupertinoIcons.sun_max
+                        : CupertinoIcons.moon,
+                    color: isDark ? AppTheme.primaryLight : AppTheme.primary,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
-      body: Column(
-        children: [
-          // Search bar
-          custom.ChatSearchBar(
-            onSearch: _onSearch,
-            onFilterTap: _showFilterSheet,
-            hasActiveFilters: _filters.hasActiveFilters,
-          ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Search bar
+            custom.ChatSearchBar(
+              onSearch: _onSearch,
+              onFilterTap: _showFilterSheet,
+              hasActiveFilters: _filters.hasActiveFilters,
+            ),
 
-          // Chat list
-          Expanded(
-            child: _isLoading
-                ? _buildLoadingState()
-                : _filteredChats.isEmpty
-                    ? _buildEmptyState()
-                    : RefreshIndicator(
-                        onRefresh: _loadChats,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.only(
-                            top: AppTheme.spacingSmall,
-                            bottom: AppTheme.spacingXLarge,
-                          ),
-                          itemCount: _filteredChats.length,
-                          itemBuilder: (context, index) {
-                            final chat = _filteredChats[index];
-                            return ChatListItem(
-                              chat: chat,
-                              onTap: () => _navigateToChatDetail(chat),
-                            );
-                          },
+            // Chat list
+            Expanded(
+              child: _isLoading
+                  ? _buildLoadingState()
+                  : _filteredChats.isEmpty
+                      ? _buildEmptyState()
+                      : CustomScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          slivers: [
+                            CupertinoSliverRefreshControl(
+                              onRefresh: _loadChats,
+                            ),
+                            SliverPadding(
+                              padding: const EdgeInsets.only(
+                                top: AppTheme.spacingSmall,
+                                bottom: AppTheme.spacingXLarge,
+                              ),
+                              sliver: SliverList(
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, index) {
+                                    final chat = _filteredChats[index];
+                                    return ChatListItem(
+                                      chat: chat,
+                                      onTap: () => _navigateToChatDetail(chat),
+                                    );
+                                  },
+                                  childCount: _filteredChats.length,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildLoadingState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return ListView.builder(
       padding: const EdgeInsets.all(AppTheme.spacingMedium),
       itemCount: 5,
       itemBuilder: (context, index) {
         return Shimmer.fromColors(
-          baseColor: Colors.grey[300]!,
-          highlightColor: Colors.grey[100]!,
+          baseColor: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+          highlightColor: isDark ? Colors.grey[700]! : Colors.grey[100]!,
           child: Container(
             margin: const EdgeInsets.only(bottom: AppTheme.spacingMedium),
             height: 120,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDark ? AppTheme.surfaceDark : Colors.white,
               borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             ),
           ),
@@ -234,26 +294,29 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Widget _buildEmptyState() {
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
             _searchQuery.isNotEmpty || _filters.hasActiveFilters
-                ? Icons.search_off
-                : Icons.chat_bubble_outline,
+                ? CupertinoIcons.search
+                : CupertinoIcons.chat_bubble,
             size: 64,
-            color: AppTheme.textTertiary,
+            color: textColor.withOpacity(0.5),
           ),
           const SizedBox(height: AppTheme.spacingMedium),
           Text(
             _searchQuery.isNotEmpty || _filters.hasActiveFilters
                 ? 'No chats found'
                 : 'No chats yet',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
+              color: textColor,
             ),
           ),
           const SizedBox(height: AppTheme.spacingSmall),
@@ -263,25 +326,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 : _isConnected
                     ? 'Start a conversation in Cursor IDE'
                     : 'Unable to connect to API',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
-              color: AppTheme.textTertiary,
+              color: textColor.withOpacity(0.7),
             ),
             textAlign: TextAlign.center,
           ),
           if (!_isConnected) ...[
             const SizedBox(height: AppTheme.spacingLarge),
-            ElevatedButton.icon(
+            CupertinoButton.filled(
               onPressed: _loadChats,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry Connection'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTheme.spacingLarge,
-                  vertical: AppTheme.spacingMedium,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(CupertinoIcons.refresh, size: 20),
+                  SizedBox(width: 8),
+                  Text('Retry Connection'),
+                ],
               ),
             ),
           ],

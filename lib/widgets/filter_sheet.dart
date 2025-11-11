@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../utils/theme.dart';
 
@@ -74,10 +75,13 @@ class _FilterSheetState extends State<FilterSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+
     return Container(
-      decoration: const BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.only(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: isDark ? AppTheme.surfaceDark : AppTheme.surface,
+        borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(AppTheme.radiusXLarge),
           topRight: Radius.circular(AppTheme.radiusXLarge),
         ),
@@ -91,7 +95,7 @@ class _FilterSheetState extends State<FilterSheet> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: AppTheme.textTertiary.withOpacity(0.3),
+              color: (isDark ? AppTheme.textTertiaryDark : AppTheme.textTertiary).withOpacity(0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -104,21 +108,27 @@ class _FilterSheetState extends State<FilterSheet> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Filters',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
+                    color: isDark ? AppTheme.textPrimaryDark : AppTheme.textPrimary,
                   ),
                 ),
-                TextButton(
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
                   onPressed: () {
                     setState(() {
                       _filters.clear();
                     });
                   },
-                  child: const Text('Clear All'),
+                  child: Text(
+                    'Clear All',
+                    style: TextStyle(
+                      color: isDark ? AppTheme.primaryLight : AppTheme.primary,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -136,48 +146,52 @@ class _FilterSheetState extends State<FilterSheet> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Content Type Section
-                  _buildSectionTitle('Content Type'),
+                  _buildSectionTitle('Content Type', isDark),
                   _buildFilterSwitch(
                     'Has Code Blocks',
-                    Icons.code,
+                    CupertinoIcons.chevron_left_slash_chevron_right,
                     AppTheme.codeColor,
                     _filters.hasCode,
                     (value) => setState(() => _filters.hasCode = value),
+                    isDark,
                   ),
                   _buildFilterSwitch(
                     'Has Todo Items',
-                    Icons.check_circle_outline,
+                    CupertinoIcons.check_mark_circled,
                     AppTheme.todoColor,
                     _filters.hasTodos,
                     (value) => setState(() => _filters.hasTodos = value),
+                    isDark,
                   ),
                   _buildFilterSwitch(
                     'Has Tool Calls',
-                    Icons.build_circle,
+                    CupertinoIcons.wrench,
                     AppTheme.toolCallColor,
                     _filters.hasToolCalls,
                     (value) => setState(() => _filters.hasToolCalls = value),
+                    isDark,
                   ),
 
                   const SizedBox(height: AppTheme.spacingLarge),
 
                   // Status Section
-                  _buildSectionTitle('Status'),
+                  _buildSectionTitle('Status', isDark),
                   _buildFilterSwitch(
                     'Include Archived',
-                    Icons.archive,
+                    CupertinoIcons.archivebox,
                     AppTheme.archivedStatus,
                     _filters.includeArchived,
                     (value) => setState(() => _filters.includeArchived = value),
+                    isDark,
                   ),
 
                   const SizedBox(height: AppTheme.spacingLarge),
 
                   // Sort Section
-                  _buildSectionTitle('Sort By'),
-                  _buildSortOption('Most Recent', 'last_updated'),
-                  _buildSortOption('Oldest First', 'created'),
-                  _buildSortOption('Name', 'name'),
+                  _buildSectionTitle('Sort By', isDark),
+                  _buildSortOption('Most Recent', 'last_updated', isDark),
+                  _buildSortOption('Oldest First', 'created', isDark),
+                  _buildSortOption('Name', 'name', isDark),
 
                   const SizedBox(height: AppTheme.spacingXLarge),
                 ],
@@ -189,37 +203,26 @@ class _FilterSheetState extends State<FilterSheet> {
           Container(
             padding: const EdgeInsets.all(AppTheme.spacingLarge),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -2),
+              color: isDark ? AppTheme.surfaceDark : AppTheme.surface,
+              border: Border(
+                top: BorderSide(
+                  color: (isDark ? Colors.white : Colors.black).withOpacity(0.1),
+                  width: 0.5,
                 ),
-              ],
+              ),
             ),
             child: SafeArea(
               child: SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
+                child: CupertinoButton.filled(
                   onPressed: () {
                     widget.onApply(_filters);
                     Navigator.pop(context);
                   },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppTheme.spacingMedium,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                    ),
-                  ),
                   child: const Text(
                     'Apply Filters',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 17,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -232,15 +235,15 @@ class _FilterSheetState extends State<FilterSheet> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSectionTitle(String title, bool isDark) {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
       child: Text(
         title,
-        style: const TextStyle(
-          fontSize: 14,
+        style: TextStyle(
+          fontSize: 13,
           fontWeight: FontWeight.w600,
-          color: AppTheme.textSecondary,
+          color: isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary,
           letterSpacing: 0.5,
         ),
       ),
@@ -253,16 +256,19 @@ class _FilterSheetState extends State<FilterSheet> {
     Color color,
     bool value,
     Function(bool) onChanged,
+    bool isDark,
   ) {
     return Container(
       margin: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacingMedium,
-        vertical: AppTheme.spacingSmall,
+        vertical: 10,
       ),
       decoration: BoxDecoration(
-        color: value ? color.withOpacity(0.1) : AppTheme.surfaceLight,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        color: value
+            ? color.withOpacity(0.15)
+            : (isDark ? AppTheme.surfaceLightDark : AppTheme.surfaceLight),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: value ? color.withOpacity(0.3) : Colors.transparent,
           width: 1,
@@ -273,20 +279,22 @@ class _FilterSheetState extends State<FilterSheet> {
           Icon(
             icon,
             size: 20,
-            color: value ? color : AppTheme.textSecondary,
+            color: value ? color : (isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary),
           ),
           const SizedBox(width: AppTheme.spacingMedium),
           Expanded(
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 15,
-                color: value ? color : AppTheme.textPrimary,
+                fontSize: 17,
+                color: value
+                    ? color
+                    : (isDark ? AppTheme.textPrimaryDark : AppTheme.textPrimary),
                 fontWeight: value ? FontWeight.w500 : FontWeight.normal,
               ),
             ),
           ),
-          Switch(
+          CupertinoSwitch(
             value: value,
             onChanged: onChanged,
             activeColor: color,
@@ -296,22 +304,23 @@ class _FilterSheetState extends State<FilterSheet> {
     );
   }
 
-  Widget _buildSortOption(String label, String value) {
+  Widget _buildSortOption(String label, String value, bool isDark) {
     final isSelected = _filters.sortBy == value;
-    
-    return InkWell(
+
+    return GestureDetector(
       onTap: () {
         setState(() {
           _filters.sortBy = value;
         });
       },
-      borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
       child: Container(
         margin: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
         padding: const EdgeInsets.all(AppTheme.spacingMedium),
         decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primary.withOpacity(0.1) : AppTheme.surfaceLight,
-          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          color: isSelected
+              ? AppTheme.primary.withOpacity(0.15)
+              : (isDark ? AppTheme.surfaceLightDark : AppTheme.surfaceLight),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isSelected ? AppTheme.primary : Colors.transparent,
             width: 2,
@@ -320,16 +329,20 @@ class _FilterSheetState extends State<FilterSheet> {
         child: Row(
           children: [
             Icon(
-              isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-              color: isSelected ? AppTheme.primary : AppTheme.textSecondary,
-              size: 20,
+              isSelected ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.circle,
+              color: isSelected
+                  ? AppTheme.primary
+                  : (isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary),
+              size: 22,
             ),
             const SizedBox(width: AppTheme.spacingMedium),
             Text(
               label,
               style: TextStyle(
-                fontSize: 15,
-                color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
+                fontSize: 17,
+                color: isSelected
+                    ? AppTheme.primary
+                    : (isDark ? AppTheme.textPrimaryDark : AppTheme.textPrimary),
                 fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
               ),
             ),

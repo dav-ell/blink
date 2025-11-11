@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/chat.dart';
 import '../services/chat_service.dart';
@@ -52,8 +53,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading messages: $e')),
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('Error'),
+            content: Text('Error loading messages: $e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
         );
       }
     }
@@ -73,21 +84,120 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     return AppTheme.getStatusColor(status.name);
   }
 
+  void _showActionSheet(BuildContext context) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => CupertinoActionSheet(
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              showCupertinoDialog(
+                context: context,
+                builder: (context) => CupertinoAlertDialog(
+                  title: const Text('Coming Soon'),
+                  content: const Text('Export chat feature is coming soon!'),
+                  actions: [
+                    CupertinoDialogAction(
+                      child: const Text('OK'),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              );
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(CupertinoIcons.arrow_down_doc),
+                SizedBox(width: 8),
+                Text('Export chat'),
+              ],
+            ),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              showCupertinoDialog(
+                context: context,
+                builder: (context) => CupertinoAlertDialog(
+                  title: const Text('Coming Soon'),
+                  content: const Text('Share feature is coming soon!'),
+                  actions: [
+                    CupertinoDialogAction(
+                      child: const Text('OK'),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              );
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(CupertinoIcons.share),
+                SizedBox(width: 8),
+                Text('Share'),
+              ],
+            ),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              showCupertinoDialog(
+                context: context,
+                builder: (context) => CupertinoAlertDialog(
+                  title: const Text('Coming Soon'),
+                  content: const Text('Archive feature is coming soon!'),
+                  actions: [
+                    CupertinoDialogAction(
+                      child: const Text('OK'),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              );
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(CupertinoIcons.archivebox),
+                SizedBox(width: 8),
+                Text('Archive'),
+              ],
+            ),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+
+    return CupertinoPageScaffold(
+      backgroundColor: isDark ? AppTheme.backgroundDark : AppTheme.background,
+      navigationBar: CupertinoNavigationBar(
+        backgroundColor: (isDark ? AppTheme.surfaceDark : AppTheme.surface).withOpacity(0.95),
+        border: null,
+        middle: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               _chat.title,
-              style: const TextStyle(fontSize: 18),
+              style: const TextStyle(fontSize: 17),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            const SizedBox(height: 2),
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
                   width: 6,
@@ -101,106 +211,94 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 Text(
                   _chat.status.name,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.normal,
-                    color: AppTheme.textSecondary,
+                    color: isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary,
                   ),
                 ),
               ],
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadFullChat,
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$value coming soon!')),
-              );
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'Export',
-                child: Row(
-                  children: [
-                    Icon(Icons.download, size: 20),
-                    SizedBox(width: 12),
-                    Text('Export chat'),
-                  ],
-                ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _loadFullChat,
+              child: Icon(
+                CupertinoIcons.refresh,
+                color: isDark ? AppTheme.primaryLight : AppTheme.primary,
               ),
-              const PopupMenuItem(
-                value: 'Share',
-                child: Row(
-                  children: [
-                    Icon(Icons.share, size: 20),
-                    SizedBox(width: 12),
-                    Text('Share'),
-                  ],
-                ),
+            ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => _showActionSheet(context),
+              child: Icon(
+                CupertinoIcons.ellipsis_circle,
+                color: isDark ? AppTheme.primaryLight : AppTheme.primary,
               ),
-              const PopupMenuItem(
-                value: 'Archive',
-                child: Row(
-                  children: [
-                    Icon(Icons.archive, size: 20),
-                    SizedBox(width: 12),
-                    Text('Archive'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
-      body: Column(
-        children: [
-          // Chat statistics header
-          _buildStatsHeader(),
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Chat statistics header
+            _buildStatsHeader(),
 
-          // Messages list
-          Expanded(
-            child: _chat.messages.isEmpty
-                ? _buildEmptyState()
-                : RefreshIndicator(
-                    onRefresh: _loadFullChat,
-                    child: ListView.builder(
+            // Messages list
+            Expanded(
+              child: _chat.messages.isEmpty
+                  ? _buildEmptyState()
+                  : CustomScrollView(
                       controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppTheme.spacingMedium,
-                      ),
-                      itemCount: _chat.messages.length,
-                      itemBuilder: (context, index) {
-                        return MessageBubble(message: _chat.messages[index]);
-                      },
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        CupertinoSliverRefreshControl(
+                          onRefresh: _loadFullChat,
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppTheme.spacingMedium,
+                          ),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                return MessageBubble(message: _chat.messages[index]);
+                              },
+                              childCount: _chat.messages.length,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildStatsHeader() {
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(AppTheme.spacingMedium),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+        color: isDark ? AppTheme.surfaceDark : AppTheme.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: (isDark ? Colors.white : Colors.black).withOpacity(0.1),
+            width: 0.5,
           ),
-        ],
+        ),
       ),
       child: Row(
         children: [
           _buildStatItem(
-            Icons.message_outlined,
+            CupertinoIcons.chat_bubble,
             '${_chat.messageCount}',
             'Messages',
             AppTheme.primary,
@@ -208,14 +306,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           if (_chat.totalLinesAdded > 0 || _chat.totalLinesRemoved > 0) ...[
             const SizedBox(width: AppTheme.spacingMedium),
             _buildStatItem(
-              Icons.add,
+              CupertinoIcons.plus,
               '+${_chat.totalLinesAdded}',
               'Added',
               AppTheme.activeStatus,
             ),
             const SizedBox(width: AppTheme.spacingMedium),
             _buildStatItem(
-              Icons.remove,
+              CupertinoIcons.minus,
               '-${_chat.totalLinesRemoved}',
               'Removed',
               AppTheme.todoColor,
@@ -289,7 +387,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.memory,
+            CupertinoIcons.gauge,
             size: 16,
             color: AppTheme.thinkingColor,
           ),
@@ -320,30 +418,33 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Widget _buildEmptyState() {
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.chat_outlined,
+            CupertinoIcons.chat_bubble_2,
             size: 64,
-            color: AppTheme.textTertiary,
+            color: textColor.withOpacity(0.5),
           ),
           const SizedBox(height: AppTheme.spacingMedium),
-          const Text(
+          Text(
             'No messages yet',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
+              color: textColor,
             ),
           ),
           const SizedBox(height: AppTheme.spacingSmall),
           Text(
             _isLoading ? 'Loading...' : 'Start a conversation in Cursor IDE',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
-              color: AppTheme.textTertiary,
+              color: textColor.withOpacity(0.7),
             ),
           ),
         ],
