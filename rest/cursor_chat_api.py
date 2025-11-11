@@ -212,10 +212,19 @@ def list_chats(
 ):
     """
     List all chats with metadata (direct SQLite query)
-    
+
     Returns chat IDs, names, timestamps, status, and basic statistics.
     Does NOT return message content - use /chats/{chat_id} for that.
     """
+    # Check if database exists - return empty list if not
+    if not os.path.exists(DB_PATH):
+        return {
+            "total": 0,
+            "returned": 0,
+            "offset": offset,
+            "chats": []
+        }
+
     conn = get_db_connection()
     cursor = conn.cursor()
     
