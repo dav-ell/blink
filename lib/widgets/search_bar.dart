@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../utils/theme.dart';
 
@@ -31,7 +32,7 @@ class _ChatSearchBarState extends State<ChatSearchBar> {
 
   void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    
+
     _debounce = Timer(const Duration(milliseconds: 300), () {
       widget.onSearch(query);
     });
@@ -39,61 +40,73 @@ class _ChatSearchBarState extends State<ChatSearchBar> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppTheme.spacingMedium,
         vertical: AppTheme.spacingSmall,
       ),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+        color: isDark ? AppTheme.surfaceDark : AppTheme.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: (isDark ? Colors.white : Colors.black).withOpacity(0.1),
+            width: 0.5,
           ),
-        ],
+        ),
       ),
       child: Row(
         children: [
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: AppTheme.surfaceLight,
-                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                color: isDark ? AppTheme.surfaceLightDark : AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: TextField(
+              child: CupertinoTextField(
                 controller: _controller,
                 onChanged: _onSearchChanged,
-                decoration: InputDecoration(
-                  hintText: 'Search chats...',
-                  hintStyle: TextStyle(
-                    color: AppTheme.textTertiary,
-                    fontSize: 15,
+                placeholder: 'Search chats...',
+                placeholderStyle: TextStyle(
+                  color: isDark ? AppTheme.textTertiaryDark : AppTheme.textTertiary,
+                  fontSize: 17,
+                ),
+                style: TextStyle(
+                  color: isDark ? AppTheme.textPrimaryDark : AppTheme.textPrimary,
+                  fontSize: 17,
+                ),
+                decoration: BoxDecoration(
+                  color: isDark ? AppTheme.surfaceLightDark : AppTheme.surfaceLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                prefix: Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Icon(
+                    CupertinoIcons.search,
+                    color: isDark ? AppTheme.textTertiaryDark : AppTheme.textTertiary,
+                    size: 20,
                   ),
-                  prefixIcon: const Icon(
-                    Icons.search,
-                    color: AppTheme.textTertiary,
-                    size: 22,
-                  ),
-                  suffixIcon: _controller.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(
-                            Icons.clear,
-                            color: AppTheme.textTertiary,
-                            size: 20,
-                          ),
-                          onPressed: () {
-                            _controller.clear();
-                            widget.onSearch('');
-                          },
-                        )
-                      : null,
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: AppTheme.spacingMedium,
-                    vertical: AppTheme.spacingMedium,
-                  ),
+                ),
+                suffix: _controller.text.isNotEmpty
+                    ? CupertinoButton(
+                        padding: const EdgeInsets.only(right: 8),
+                        minSize: 0,
+                        onPressed: () {
+                          _controller.clear();
+                          widget.onSearch('');
+                          setState(() {});
+                        },
+                        child: Icon(
+                          CupertinoIcons.clear_circled_solid,
+                          color: isDark ? AppTheme.textTertiaryDark : AppTheme.textTertiary,
+                          size: 18,
+                        ),
+                      )
+                    : null,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 12,
                 ),
               ),
             ),
@@ -105,18 +118,20 @@ class _ChatSearchBarState extends State<ChatSearchBar> {
                 Container(
                   decoration: BoxDecoration(
                     color: widget.hasActiveFilters
-                        ? AppTheme.primary.withOpacity(0.1)
-                        : AppTheme.surfaceLight,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                        ? AppTheme.primary.withOpacity(0.15)
+                        : (isDark ? AppTheme.surfaceLightDark : AppTheme.surfaceLight),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: IconButton(
-                    icon: Icon(
-                      Icons.filter_list,
+                  child: CupertinoButton(
+                    padding: const EdgeInsets.all(12),
+                    onPressed: widget.onFilterTap,
+                    child: Icon(
+                      CupertinoIcons.slider_horizontal_3,
                       color: widget.hasActiveFilters
                           ? AppTheme.primary
-                          : AppTheme.textSecondary,
+                          : (isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary),
+                      size: 22,
                     ),
-                    onPressed: widget.onFilterTap,
                   ),
                 ),
                 if (widget.hasActiveFilters)

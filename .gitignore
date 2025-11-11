@@ -263,3 +263,6 @@ macos/
 
 # IDE
 .idea/
+
+# Claude
+.claude/settings.local.json
