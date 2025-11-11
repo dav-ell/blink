@@ -1,0 +1,539 @@
+# Blink Debugging Skill
+
+## Purpose
+Specialized skill for debugging and troubleshooting issues across the full stack (Flutter + REST API).
+
+## When to Use
+- App crashes or errors
+- API connection failures
+- Data not displaying correctly
+- Performance issues
+- Build/deployment problems
+
+## Quick Diagnostics
+
+### Health Check Sequence
+```bash
+# 1. Check API is running
+curl http://localhost:8000/health
+
+# 2. Check database exists
+ls -la ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb
+
+# 3. Check Flutter can reach API
+flutter run -d chrome  # Check console for connection errors
+
+# 4. Check dependencies
+cd /path/to/blink
+flutter doctor
+python3 --version  # Should be 3.7+
+```
+
+## Common Issues & Solutions
+
+### 1. "Unable to connect to API"
+
+**Symptoms**:
+- Red error banner in app
+- "Failed to connect" in console
+- Timeout errors
+
+**Diagnosis**:
+```bash
+# Is API running?
+curl http://localhost:8000/health
+
+# Check port is available
+lsof -i :8000
+```
+
+**Solutions**:
+```bash
+# Start API if not running
+cd rest
+python3 cursor_chat_api.py
+
+# Kill process on port 8000 if stuck
+kill -9 $(lsof -ti:8000)
+```
+
+**Code fixes**:
+```dart
+// lib/services/api_service.dart
+// For iOS simulator: use 127.0.0.1
+static const String baseUrl = 'http://127.0.0.1:8000';
+
+// For Android emulator: use 10.0.2.2
+static const String baseUrl = 'http://10.0.2.2:8000';
+```
+
+### 2. "Database not found" (503 Error)
+
+**Symptoms**:
+- API returns 503
+- Error: "Database not found at path..."
+
+**Diagnosis**:
+```bash
+# Check if Cursor is installed
+ls ~/Library/Application\ Support/Cursor/
+
+# Check database exists
+sqlite3 ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb ".tables"
+```
+
+**Solutions**:
+1. Install Cursor IDE if not installed
+2. Open Cursor and create at least one chat
+3. Verify database path in `rest/cursor_chat_api.py`:
+   ```python
+   DB_PATH = os.path.expanduser(
+       '~/Library/Application Support/Cursor/User/globalStorage/state.vscdb'
+   )
+   ```
+
+### 3. No Chats Displayed
+
+**Symptoms**:
+- API returns data but UI shows empty
+- "No chats yet" message
+
+**Diagnosis**:
+```bash
+# Check API directly
+curl "http://localhost:8000/chats?limit=5" | python3 -m json.tool
+
+# Check Flutter console for JSON parsing errors
+```
+
+**Code checks**:
+```dart
+// lib/services/chat_service.dart
+// Add debug print
+Future<List<Chat>> fetchChats() async {
+  try {
+    final response = await _apiService.fetchChats();
+    print('API Response: $response');  // Debug line
+    // ... rest of code
+  }
+}
+```
+
+**Common causes**:
+- JSON parsing error (check model `fromJson` methods)
+- Empty response from API
+- Cache issue (call `clearCache()`)
+
+### 4. Build Errors
+
+**"flutter_syntax_view not found"**:
+```bash
+flutter clean
+flutter pub get
+```
+
+**"Dart SDK version conflict"**:
+```bash
+# Check pubspec.yaml SDK version
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+# Update Flutter
+flutter upgrade
+```
+
+**"No macOS desktop project"**:
+```bash
+flutter create --platforms=macos .
+```
+
+### 5. JSON Parsing Errors
+
+**Symptoms**:
+- "type 'Null' is not a subtype of type 'String'"
+- FormatException
+
+**Debugging**:
+```dart
+// Add try-catch in model fromJson
+factory Chat.fromJson(Map<String, dynamic> json) {
+  try {
+    print('Parsing chat JSON: $json');  // Debug
+    return Chat(
+      id: json['chat_id'] ?? json['id'] ?? '',
+      // ... rest
+    );
+  } catch (e) {
+    print('Error parsing chat: $e');
+    print('JSON was: $json');
+    rethrow;
+  }
+}
+```
+
+### 6. Performance Issues
+
+**Symptoms**:
+- Slow list scrolling
+- UI jank
+- High memory usage
+
+**Diagnosis**:
+```bash
+# Run with performance overlay
+flutter run --profile -d macos
+
+# In app: Press 'P' to show performance overlay
+```
+
+**Solutions**:
+1. Use `ListView.builder` instead of `ListView` with `.map()`
+2. Add `const` constructors
+3. Implement list item keys
+4. Check for unnecessary rebuilds (use DevTools)
+
+**Code fix**:
+```dart
+// ❌ Bad
+ListView(
+  children: items.map((item) => ItemWidget(item)).toList(),
+)
+
+// ✅ Good
+ListView.builder(
+  itemCount: items.length,
+  itemBuilder: (context, index) {
+    return ItemWidget(
+      key: ValueKey(items[index].id),  // Add key!
+      item: items[index],
+    );
+  },
+)
+```
+
+## Logging & Monitoring
+
+### Flutter Console Logging
+```dart
+import 'dart:developer' as developer;
+
+// Simple logging
+print('Debug message');
+
+// Better logging with timestamps
+developer.log(
+  'Fetching chats',
+  name: 'ChatService',
+  time: DateTime.now(),
+);
+
+// Error logging
+developer.log(
+  'Error occurred',
+  name: 'ChatService',
+  error: e,
+  stackTrace: stackTrace,
+);
+```
+
+### API Logging
+```python
+# rest/cursor_chat_api.py
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+@app.get("/chats")
+def get_chats():
+    logger.info(f"Fetching chats with params: {dict(request.query_params)}")
+    # ... code
+    logger.debug(f"Returning {len(chats)} chats")
+```
+
+### Network Debugging
+```dart
+// lib/services/api_service.dart
+Future<Map<String, dynamic>> fetchChats() async {
+  final uri = Uri.parse('$baseUrl/chats');
+  print('📡 Fetching: $uri');
+  
+  final response = await _client.get(uri);
+  print('📥 Response status: ${response.statusCode}');
+  print('📥 Response body: ${response.body}');
+  
+  if (response.statusCode == 200) {
+    return json.decode(response.body);
+  }
+  // ...
+}
+```
+
+## Testing Strategies
+
+### API Testing
+```bash
+# Unit test
+cd rest
+python3 test_api.py
+
+# Manual endpoint testing
+curl -v http://localhost:8000/health
+curl -v "http://localhost:8000/chats?limit=1"
+curl -v http://localhost:8000/chats/{chat_id}
+```
+
+### Flutter Testing
+```bash
+# Run all tests
+flutter test
+
+# Run specific test
+flutter test test/widget_test.dart
+
+# Run with coverage
+flutter test --coverage
+
+# Analyze code
+flutter analyze
+```
+
+### Integration Testing
+```bash
+# 1. Start API
+cd rest && python3 cursor_chat_api.py &
+
+# 2. Run Flutter app
+flutter run -d macos
+
+# 3. Manual testing checklist:
+# - [ ] Chats load on launch
+# - [ ] Search works
+# - [ ] Filters apply
+# - [ ] Chat detail opens
+# - [ ] Messages display
+# - [ ] Pull to refresh works
+# - [ ] Error states show
+```
+
+## DevTools Usage
+
+### Launch DevTools
+```bash
+flutter run -d macos
+# In terminal: Press 'w' to open DevTools in browser
+```
+
+### Key Features
+1. **Inspector**: Check widget tree, properties
+2. **Performance**: Find jank, identify rebuilds
+3. **Network**: Monitor API calls
+4. **Logging**: View all logs in one place
+5. **Memory**: Find memory leaks
+
+## Error Messages Reference
+
+### Flutter Errors
+
+**"setState() called after dispose()"**:
+```dart
+// Solution: Check if mounted
+if (mounted) {
+  setState(() {
+    // ...
+  });
+}
+```
+
+**"RenderBox was not laid out"**:
+```dart
+// Solution: Wrap in Expanded or Flexible
+Expanded(
+  child: YourWidget(),
+)
+```
+
+**"A RenderFlex overflowed"**:
+```dart
+// Solution: Use SingleChildScrollView or constrain size
+SingleChildScrollView(
+  child: Column(children: [...]),
+)
+```
+
+### API Errors
+
+**"Connection refused"**:
+- API not running
+- Wrong port (should be 8000)
+- Firewall blocking
+
+**"503 Service Unavailable"**:
+- Database not found
+- Database locked (Cursor is writing)
+
+**"404 Not Found"**:
+- Wrong endpoint
+- Chat ID doesn't exist
+
+**"500 Internal Server Error"**:
+- Python exception (check API console)
+- Database query error
+
+## Performance Profiling
+
+### Flutter Performance
+```bash
+# Profile mode (optimized but debuggable)
+flutter run --profile -d macos
+
+# Release mode (full optimization)
+flutter run --release -d macos
+```
+
+### API Performance
+```python
+# Add timing to endpoints
+import time
+
+@app.get("/chats")
+def get_chats():
+    start = time.time()
+    # ... logic
+    duration = time.time() - start
+    print(f"Request took {duration:.2f}s")
+```
+
+### Database Performance
+```python
+# Enable SQLite query logging
+conn = get_db_connection()
+conn.set_trace_callback(print)  # Log all queries
+```
+
+## Emergency Fixes
+
+### Nuclear Options (When All Else Fails)
+
+**Flutter**:
+```bash
+# Complete rebuild
+flutter clean
+rm -rf pubspec.lock
+rm -rf .dart_tool/
+flutter pub get
+flutter run
+```
+
+**API**:
+```bash
+# Reinstall dependencies
+cd rest
+rm -rf venv
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements_api.txt
+python3 cursor_chat_api.py
+```
+
+**Git**:
+```bash
+# Discard all local changes
+git stash
+git pull origin main
+```
+
+## Debugging Checklist
+
+When facing an issue, run through this checklist:
+
+- [ ] API is running (curl http://localhost:8000/health)
+- [ ] Database exists and is accessible
+- [ ] Flutter dependencies are installed (flutter pub get)
+- [ ] No linter errors (flutter analyze)
+- [ ] API endpoint is correct in ApiService
+- [ ] Models match API response structure
+- [ ] Error handling is in place
+- [ ] Console shows no unhandled exceptions
+- [ ] Network calls succeed (check DevTools Network tab)
+- [ ] Data is being parsed correctly (add debug prints)
+
+## Getting Help
+
+### Useful Commands
+```bash
+# System info
+flutter doctor -v
+python3 --version
+sw_vers  # macOS version
+
+# Dependencies
+flutter pub deps
+pip list
+
+# Environment
+echo $PATH
+which flutter
+which python3
+```
+
+### Log Collection
+```bash
+# Collect all logs for bug report
+flutter run --verbose &> flutter_log.txt
+python3 cursor_chat_api.py &> api_log.txt
+```
+
+## Prevention Tips
+
+1. **Always test API first**: Before Flutter changes
+2. **Use version control**: Commit before major changes
+3. **Keep dependencies updated**: Run `flutter pub upgrade` regularly
+4. **Monitor performance**: Check DevTools occasionally
+5. **Handle errors gracefully**: Try-catch everywhere
+6. **Log strategically**: Not too much, not too little
+7. **Test on multiple platforms**: macOS, web, mobile
+
+## Advanced Debugging
+
+### Charles Proxy (Network Monitoring)
+```bash
+# Install Charles Proxy
+brew install --cask charles
+
+# Configure Flutter to use proxy
+flutter run --dart-define=USE_PROXY=true
+```
+
+### VS Code Debugging
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart"
+    }
+  ]
+}
+```
+
+### API Debugging (VS Code)
+```json
+// .vscode/launch.json
+{
+  "name": "Python: FastAPI",
+  "type": "python",
+  "request": "launch",
+  "module": "uvicorn",
+  "args": [
+    "cursor_chat_api:app",
+    "--reload"
+  ],
+  "cwd": "${workspaceFolder}/rest"
+}
+```
+

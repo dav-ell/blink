@@ -1,0 +1,512 @@
+# Blink Flutter UI Development Skill
+
+## Purpose
+Specialized skill for developing Flutter UI components following Material Design 3 patterns with the custom AppTheme.
+
+## When to Use
+- Creating new widgets
+- Styling components
+- Adding screens
+- Implementing UI interactions
+- Following design system patterns
+
+## Theme System
+
+### Always Use AppTheme Constants
+
+**Location**: `lib/utils/theme.dart`
+
+**Colors**:
+```dart
+AppTheme.primary              // #2563EB
+AppTheme.primaryLight         // #60A5FA
+AppTheme.surface              // White
+AppTheme.surfaceLight         // #F1F5F9
+AppTheme.textPrimary          // #1E293B
+AppTheme.textSecondary        // #64748B
+AppTheme.textTertiary         // #94A3B8
+
+// Content types
+AppTheme.codeColor            // Green
+AppTheme.todoColor            // Orange
+AppTheme.toolCallColor        // Purple
+AppTheme.thinkingColor        // Cyan
+
+// Status colors
+AppTheme.activeStatus         // Green
+AppTheme.inactiveStatus       // Orange
+AppTheme.completedStatus      // Blue
+```
+
+**Spacing**:
+```dart
+AppTheme.spacingXSmall    // 4.0
+AppTheme.spacingSmall     // 8.0
+AppTheme.spacingMedium    // 16.0
+AppTheme.spacingLarge     // 24.0
+AppTheme.spacingXLarge    // 32.0
+```
+
+**Border Radius**:
+```dart
+AppTheme.radiusSmall      // 8.0
+AppTheme.radiusMedium     // 12.0
+AppTheme.radiusLarge      // 16.0
+AppTheme.radiusXLarge     // 20.0
+```
+
+**Shadows**:
+```dart
+AppTheme.cardShadow       // List<BoxShadow>
+AppTheme.elevatedShadow   // List<BoxShadow>
+```
+
+**Gradients**:
+```dart
+AppTheme.primaryGradient
+AppTheme.assistantGradient
+AppTheme.cardGradient
+```
+
+## Widget Patterns
+
+### Creating a New Widget
+
+**Template**:
+```dart
+import 'package:flutter/material.dart';
+import '../utils/theme.dart';
+
+class YourWidget extends StatelessWidget {
+  final String requiredParam;
+  final bool optionalParam;
+
+  const YourWidget({
+    super.key,
+    required this.requiredParam,
+    this.optionalParam = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spacingMedium),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        boxShadow: AppTheme.cardShadow,
+      ),
+      child: // Your content
+    );
+  }
+}
+```
+
+### Card Pattern
+```dart
+Container(
+  margin: const EdgeInsets.symmetric(
+    horizontal: AppTheme.spacingMedium,
+    vertical: AppTheme.spacingSmall,
+  ),
+  decoration: BoxDecoration(
+    gradient: AppTheme.cardGradient,
+    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+    boxShadow: AppTheme.cardShadow,
+    border: Border.all(
+      color: Colors.black.withOpacity(0.05),
+      width: 1,
+    ),
+  ),
+  child: Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      child: Padding(
+        padding: const EdgeInsets.all(AppTheme.spacingMedium),
+        child: // Content
+      ),
+    ),
+  ),
+)
+```
+
+### Chip/Badge Pattern
+```dart
+Container(
+  padding: const EdgeInsets.symmetric(
+    horizontal: AppTheme.spacingSmall,
+    vertical: AppTheme.spacingXSmall,
+  ),
+  decoration: BoxDecoration(
+    color: AppTheme.primary.withOpacity(0.1),
+    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+  ),
+  child: Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(Icons.icon, size: 14, color: AppTheme.primary),
+      const SizedBox(width: AppTheme.spacingXSmall),
+      Text(
+        'Label',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: AppTheme.primary,
+        ),
+      ),
+    ],
+  ),
+)
+```
+
+### Message Bubble Pattern
+```dart
+// User message (right-aligned, blue gradient)
+Container(
+  padding: const EdgeInsets.all(AppTheme.spacingMedium),
+  decoration: BoxDecoration(
+    gradient: const LinearGradient(
+      colors: [AppTheme.userMessageBg, AppTheme.primaryLight],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    ),
+    borderRadius: BorderRadius.only(
+      topLeft: Radius.circular(AppTheme.radiusLarge),
+      topRight: Radius.circular(AppTheme.radiusLarge),
+      bottomLeft: Radius.circular(AppTheme.radiusLarge),
+      bottomRight: Radius.circular(AppTheme.radiusSmall),
+    ),
+  ),
+  child: Text(
+    message,
+    style: TextStyle(color: Colors.white, fontSize: 15),
+  ),
+)
+
+// Assistant message (left-aligned, light gradient)
+Container(
+  padding: const EdgeInsets.all(AppTheme.spacingMedium),
+  decoration: BoxDecoration(
+    gradient: AppTheme.assistantGradient,
+    borderRadius: BorderRadius.only(
+      topLeft: Radius.circular(AppTheme.radiusLarge),
+      topRight: Radius.circular(AppTheme.radiusLarge),
+      bottomLeft: Radius.circular(AppTheme.radiusSmall),
+      bottomRight: Radius.circular(AppTheme.radiusLarge),
+    ),
+  ),
+  child: Text(
+    message,
+    style: TextStyle(color: AppTheme.textPrimary, fontSize: 15),
+  ),
+)
+```
+
+## Screen Patterns
+
+### Basic Screen Structure
+```dart
+import 'package:flutter/material.dart';
+import '../utils/theme.dart';
+
+class YourScreen extends StatefulWidget {
+  const YourScreen({super.key});
+
+  @override
+  State<YourScreen> createState() => _YourScreenState();
+}
+
+class _YourScreenState extends State<YourScreen> {
+  bool _isLoading = true;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    // Load data
+    setState(() => _isLoading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        title: const Text('Title'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadData,
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? _buildLoadingState()
+          : _buildContent(),
+    );
+  }
+  
+  Widget _buildLoadingState() {
+    // Use Shimmer package
+  }
+  
+  Widget _buildContent() {
+    // Main content
+  }
+}
+```
+
+### Loading State (Shimmer)
+```dart
+import 'package:shimmer/shimmer.dart';
+
+Widget _buildLoadingState() {
+  return ListView.builder(
+    padding: const EdgeInsets.all(AppTheme.spacingMedium),
+    itemCount: 5,
+    itemBuilder: (context, index) {
+      return Shimmer.fromColors(
+        baseColor: Colors.grey[300]!,
+        highlightColor: Colors.grey[100]!,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: AppTheme.spacingMedium),
+          height: 120,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          ),
+        ),
+      );
+    },
+  );
+}
+```
+
+### Empty State
+```dart
+Widget _buildEmptyState() {
+  return Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.chat_bubble_outline,
+          size: 64,
+          color: AppTheme.textTertiary,
+        ),
+        const SizedBox(height: AppTheme.spacingMedium),
+        Text(
+          'No items yet',
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textSecondary,
+          ),
+        ),
+        const SizedBox(height: AppTheme.spacingSmall),
+        Text(
+          'Description text',
+          style: const TextStyle(
+            fontSize: 14,
+            color: AppTheme.textTertiary,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+```
+
+## Common UI Elements
+
+### Search Bar
+```dart
+Container(
+  decoration: BoxDecoration(
+    color: AppTheme.surfaceLight,
+    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+  ),
+  child: TextField(
+    decoration: InputDecoration(
+      hintText: 'Search...',
+      prefixIcon: const Icon(Icons.search),
+      border: InputBorder.none,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacingMedium,
+        vertical: AppTheme.spacingMedium,
+      ),
+    ),
+    onChanged: (query) => _onSearch(query),
+  ),
+)
+```
+
+### Bottom Sheet
+```dart
+showModalBottomSheet(
+  context: context,
+  isScrollControlled: true,
+  backgroundColor: Colors.transparent,
+  builder: (context) => DraggableScrollableSheet(
+    initialChildSize: 0.7,
+    minChildSize: 0.5,
+    maxChildSize: 0.9,
+    builder: (_, controller) => Container(
+      decoration: const BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(AppTheme.radiusXLarge),
+          topRight: Radius.circular(AppTheme.radiusXLarge),
+        ),
+      ),
+      child: // Content
+    ),
+  ),
+);
+```
+
+### Pull to Refresh
+```dart
+RefreshIndicator(
+  onRefresh: _loadData,
+  child: ListView.builder(
+    // List content
+  ),
+)
+```
+
+## Typography
+
+### Text Styles
+```dart
+// Headers
+Text('Header', style: Theme.of(context).textTheme.headlineMedium)
+
+// Body
+Text('Body', style: Theme.of(context).textTheme.bodyLarge)
+
+// Caption
+Text('Caption', style: Theme.of(context).textTheme.bodySmall)
+
+// Custom
+Text(
+  'Custom',
+  style: TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w600,
+    color: AppTheme.textPrimary,
+  ),
+)
+```
+
+## Navigation
+
+### Push New Screen
+```dart
+Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (context) => NextScreen(param: value),
+  ),
+);
+```
+
+### Pop with Result
+```dart
+Navigator.pop(context, result);
+```
+
+## State Management
+
+### Local State
+Use `StatefulWidget` with `setState()`
+
+### Shared State (Provider - Ready for Use)
+```dart
+// 1. Create provider class
+class ChatProvider extends ChangeNotifier {
+  List<Chat> _chats = [];
+  
+  List<Chat> get chats => _chats;
+  
+  void updateChats(List<Chat> chats) {
+    _chats = chats;
+    notifyListeners();
+  }
+}
+
+// 2. Wrap app (in main.dart)
+MultiProvider(
+  providers: [
+    ChangeNotifierProvider(create: (_) => ChatProvider()),
+  ],
+  child: BlinkApp(),
+)
+
+// 3. Use in widgets
+final chatProvider = Provider.of<ChatProvider>(context);
+// or
+final chatProvider = context.watch<ChatProvider>();
+```
+
+## Performance Tips
+
+1. **Use const**: Add `const` to constructors when possible
+2. **Keys**: Use `key:` parameter for list items
+3. **ListView.builder**: For long lists (don't use ListView with .map())
+4. **Avoid rebuilds**: Extract widgets to separate classes
+5. **Debounce**: Use Timer for search (see ChatSearchBar)
+
+## Testing
+
+### Widget Test
+```dart
+testWidgets('Description', (WidgetTester tester) async {
+  await tester.pumpWidget(
+    MaterialApp(home: YourWidget()),
+  );
+  
+  expect(find.text('Expected'), findsOneWidget);
+  
+  await tester.tap(find.byIcon(Icons.icon));
+  await tester.pump();
+  
+  expect(find.text('After tap'), findsOneWidget);
+});
+```
+
+## Debugging
+
+### Flutter DevTools
+```bash
+flutter run
+# Press 'w' to open DevTools
+```
+
+### Common Issues
+
+**Overflow errors**: Use `Expanded`, `Flexible`, or `SingleChildScrollView`
+
+**setState called after dispose**: Check `if (mounted)` before setState
+
+**Keyboard overflow**: Wrap in `SingleChildScrollView` or use `resizeToAvoidBottomInset`
+
+## Quick Checklist
+
+- [ ] Import `AppTheme`
+- [ ] Use theme constants (no hardcoded colors)
+- [ ] Add const constructors
+- [ ] Handle loading states
+- [ ] Handle empty states
+- [ ] Handle errors gracefully
+- [ ] Add proper padding/margins
+- [ ] Use appropriate text styles
+- [ ] Add hero animations for navigation (optional)
+- [ ] Test on different screen sizes
+
