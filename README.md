@@ -2,6 +2,25 @@
 
 A Flutter mobile app that lets you view and continue your Cursor IDE chat conversations from iOS/Android devices with full conversation context.
 
+---
+
+## ⚠️ EXPERIMENTAL - READ BEFORE USE
+
+**This project is experimental and writes directly to Cursor's SQLite database.**
+
+### Critical Warnings:
+
+1. **Database Corruption Risk** - Direct database writes can corrupt your Cursor chat history
+2. **Backup Required** - Always backup your database before use:
+   ```bash
+   # macOS
+   cp ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb \
+      ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb.backup
+   ```
+3. **Use at Your Own Risk** - Test with non-critical chats first.
+
+---
+
 ## Overview
 
 Blink provides a mobile interface to your Cursor IDE chats, allowing you to:
