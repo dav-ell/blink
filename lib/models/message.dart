@@ -7,6 +7,14 @@ enum MessageRole {
   assistant,
 }
 
+enum MessageStatus {
+  pending,    // Message created, not yet sent
+  sending,    // Being sent to backend
+  processing, // Backend is processing (cursor-agent running)
+  completed,  // Successfully completed
+  failed,     // Failed to send or process
+}
+
 class Message {
   final String id;
   final String bubbleId;
@@ -24,6 +32,13 @@ class Message {
   final String? thinkingContent;
   final List<CodeBlock>? codeBlocks;
   final List<TodoItem>? todos;
+  // Async status fields
+  final MessageStatus status;
+  final String? jobId;
+  final DateTime? sentAt;
+  final DateTime? processingStartedAt;
+  final DateTime? completedAt;
+  final String? errorMessage;
 
   Message({
     required this.id,
@@ -41,6 +56,12 @@ class Message {
     this.thinkingContent,
     this.codeBlocks,
     this.todos,
+    this.status = MessageStatus.completed, // Default for existing messages
+    this.jobId,
+    this.sentAt,
+    this.processingStartedAt,
+    this.completedAt,
+    this.errorMessage,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -70,6 +91,15 @@ class Message {
           .toList();
     }
     
+    // Parse status
+    MessageStatus status = MessageStatus.completed;
+    if (json['status'] != null) {
+      status = MessageStatus.values.firstWhere(
+        (s) => s.name == json['status'],
+        orElse: () => MessageStatus.completed,
+      );
+    }
+    
     return Message(
       id: json['bubble_id'] ?? json['id'] ?? '',
       bubbleId: json['bubble_id'] ?? '',
@@ -88,6 +118,16 @@ class Message {
       thinkingContent: json['thinking_content'],
       codeBlocks: codeBlocks,
       todos: todos,
+      status: status,
+      jobId: json['job_id'],
+      sentAt: json['sent_at'] != null ? DateTime.parse(json['sent_at']) : null,
+      processingStartedAt: json['processing_started_at'] != null
+          ? DateTime.parse(json['processing_started_at'])
+          : null,
+      completedAt: json['completed_at'] != null
+          ? DateTime.parse(json['completed_at'])
+          : null,
+      errorMessage: json['error_message'],
     );
   }
 
@@ -102,6 +142,78 @@ class Message {
       'has_thinking': hasThinking,
       'has_code': hasCode,
       'has_todos': hasTodos,
+      'status': status.name,
+      'job_id': jobId,
+      'sent_at': sentAt?.toIso8601String(),
+      'processing_started_at': processingStartedAt?.toIso8601String(),
+      'completed_at': completedAt?.toIso8601String(),
+      'error_message': errorMessage,
     };
+  }
+
+  /// Get elapsed time in seconds since processing started
+  double? getElapsedSeconds() {
+    if (processingStartedAt == null) return null;
+    final endTime = completedAt ?? DateTime.now();
+    return endTime.difference(processingStartedAt!).inMilliseconds / 1000.0;
+  }
+
+  /// Check if message is currently being processed
+  bool get isProcessing =>
+      status == MessageStatus.sending || status == MessageStatus.processing;
+
+  /// Check if message has completed successfully
+  bool get isCompleted => status == MessageStatus.completed;
+
+  /// Check if message has failed
+  bool get isFailed => status == MessageStatus.failed;
+
+  /// Create a copy of this message with some fields replaced
+  Message copyWith({
+    String? id,
+    String? bubbleId,
+    String? content,
+    MessageRole? role,
+    DateTime? timestamp,
+    int? type,
+    String? typeLabel,
+    bool? hasToolCall,
+    bool? hasThinking,
+    bool? hasCode,
+    bool? hasTodos,
+    List<ToolCall>? toolCalls,
+    String? thinkingContent,
+    List<CodeBlock>? codeBlocks,
+    List<TodoItem>? todos,
+    MessageStatus? status,
+    String? jobId,
+    DateTime? sentAt,
+    DateTime? processingStartedAt,
+    DateTime? completedAt,
+    String? errorMessage,
+  }) {
+    return Message(
+      id: id ?? this.id,
+      bubbleId: bubbleId ?? this.bubbleId,
+      content: content ?? this.content,
+      role: role ?? this.role,
+      timestamp: timestamp ?? this.timestamp,
+      type: type ?? this.type,
+      typeLabel: typeLabel ?? this.typeLabel,
+      hasToolCall: hasToolCall ?? this.hasToolCall,
+      hasThinking: hasThinking ?? this.hasThinking,
+      hasCode: hasCode ?? this.hasCode,
+      hasTodos: hasTodos ?? this.hasTodos,
+      toolCalls: toolCalls ?? this.toolCalls,
+      thinkingContent: thinkingContent ?? this.thinkingContent,
+      codeBlocks: codeBlocks ?? this.codeBlocks,
+      todos: todos ?? this.todos,
+      status: status ?? this.status,
+      jobId: jobId ?? this.jobId,
+      sentAt: sentAt ?? this.sentAt,
+      processingStartedAt: processingStartedAt ?? this.processingStartedAt,
+      completedAt: completedAt ?? this.completedAt,
+      errorMessage: errorMessage ?? this.errorMessage,
+    );
   }
 }

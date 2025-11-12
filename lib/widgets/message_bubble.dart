@@ -6,13 +6,16 @@ import 'content_type_badge.dart';
 import 'tool_call_box.dart';
 import 'thinking_box.dart';
 import 'expandable_content.dart';
+import 'processing_indicator.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
+  final VoidCallback? onRetry;
 
   const MessageBubble({
     super.key,
     required this.message,
+    this.onRetry,
   });
 
   @override
@@ -52,6 +55,16 @@ class MessageBubble extends StatelessWidget {
                   spacing: AppTheme.spacingXSmall,
                   runSpacing: AppTheme.spacingXSmall,
                   children: _buildContentBadges(),
+                ),
+              ),
+
+            // Processing indicator (for pending/processing messages)
+            if (message.isProcessing)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppTheme.spacingXSmall),
+                child: ProcessingIndicator(
+                  elapsedSeconds: message.getElapsedSeconds(),
+                  isPending: message.status == MessageStatus.pending,
                 ),
               ),
 
@@ -118,13 +131,88 @@ class MessageBubble extends StatelessWidget {
                       maxLines: 10,
                     ),
 
-                    // Timestamp
+                    // Error message for failed messages
+                    if (message.isFailed && message.errorMessage != null) ...[
+                      const SizedBox(height: AppTheme.spacingSmall),
+                      Container(
+                        padding: const EdgeInsets.all(AppTheme.spacingSmall),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                          border: Border.all(
+                            color: Colors.red.withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  size: 14,
+                                  color: Colors.red,
+                                ),
+                                const SizedBox(width: AppTheme.spacingXSmall),
+                                Expanded(
+                                  child: Text(
+                                    message.errorMessage!,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.red.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (onRetry != null && isUser) ...[
+                              const SizedBox(height: AppTheme.spacingXSmall),
+                              GestureDetector(
+                                onTap: onRetry,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppTheme.spacingSmall,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: const [
+                                      Icon(
+                                        Icons.refresh,
+                                        size: 12,
+                                        color: Colors.white,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Retry',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // Timestamp and status
                     const SizedBox(height: AppTheme.spacingSmall),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.access_time,
+                          _getStatusIcon(),
                           size: 11,
                           color: isUser
                               ? Colors.white.withOpacity(0.7)
@@ -175,6 +263,21 @@ class MessageBubble extends StatelessWidget {
     }
 
     return badges;
+  }
+
+  IconData _getStatusIcon() {
+    switch (message.status) {
+      case MessageStatus.pending:
+        return Icons.schedule;
+      case MessageStatus.sending:
+        return Icons.upload_rounded;
+      case MessageStatus.processing:
+        return Icons.hourglass_bottom;
+      case MessageStatus.completed:
+        return Icons.access_time;
+      case MessageStatus.failed:
+        return Icons.error_outline;
+    }
   }
 
   String _formatTime(DateTime timestamp) {

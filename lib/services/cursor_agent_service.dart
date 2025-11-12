@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/chat.dart';
+import '../models/job.dart';
 
 /// Service for interacting with cursor-agent via REST API
 /// 
@@ -201,6 +202,131 @@ class CursorAgentService {
       return ApiStatus.fromJson(json.decode(response.body));
     } else {
       throw CursorAgentException('API not available');
+    }
+  }
+
+  // =========================================================================
+  // Async Job Management (NEW v2.0)
+  // =========================================================================
+
+  /// Submit a prompt asynchronously and return immediately with job ID
+  Future<Job> submitPromptAsync(
+    String chatId,
+    String prompt, {
+    String? model,
+  }) async {
+    final uri = Uri.parse('$baseUrl/chats/$chatId/agent-prompt-async');
+    
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'prompt': prompt,
+        'include_history': true,
+        if (model != null) 'model': model,
+        'output_format': 'text',
+      }),
+    ).timeout(const Duration(seconds: 10));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      // Convert the initial response to a Job object
+      return Job(
+        jobId: data['job_id'],
+        chatId: data['chat_id'],
+        prompt: prompt,
+        status: JobStatus.pending,
+        createdAt: DateTime.parse(data['created_at']),
+        model: model,
+      );
+    } else if (response.statusCode == 404) {
+      throw ChatNotFoundException(chatId);
+    } else {
+      final error = json.decode(response.body);
+      throw CursorAgentException(
+        error['detail'] ?? 'Failed to submit prompt: ${response.statusCode}'
+      );
+    }
+  }
+
+  /// Get full job details including status and result
+  Future<Job> getJobDetails(String jobId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/jobs/$jobId'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 10));
+    
+    if (response.statusCode == 200) {
+      return Job.fromJson(json.decode(response.body));
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Job not found: $jobId');
+    } else {
+      throw CursorAgentException('Failed to get job: ${response.statusCode}');
+    }
+  }
+
+  /// Quick status check (lighter response)
+  Future<Map<String, dynamic>> getJobStatus(String jobId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/jobs/$jobId/status'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 5));
+    
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Job not found: $jobId');
+    } else {
+      throw CursorAgentException('Failed to get job status: ${response.statusCode}');
+    }
+  }
+
+  /// List all jobs for a chat
+  Future<List<Job>> listChatJobs(
+    String chatId, {
+    int limit = 20,
+    String? statusFilter,
+  }) async {
+    final queryParams = {
+      'limit': limit.toString(),
+      if (statusFilter != null) 'status_filter': statusFilter,
+    };
+    
+    final uri = Uri.parse('$baseUrl/chats/$chatId/jobs').replace(
+      queryParameters: queryParams,
+    );
+    
+    final response = await _client.get(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 10));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return (data['jobs'] as List)
+          .map((jobJson) => Job.fromJson(jobJson))
+          .toList();
+    } else {
+      throw CursorAgentException('Failed to list jobs: ${response.statusCode}');
+    }
+  }
+
+  /// Cancel a pending or processing job
+  Future<void> cancelJob(String jobId) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/jobs/$jobId'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 5));
+    
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Job not found: $jobId');
+    } else if (response.statusCode == 400) {
+      final error = json.decode(response.body);
+      throw CursorAgentException(error['detail'] ?? 'Cannot cancel job');
+    } else {
+      throw CursorAgentException('Failed to cancel job: ${response.statusCode}');
     }
   }
 

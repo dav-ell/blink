@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/chat.dart';
+import '../models/message.dart';
+import '../models/job.dart';
 import '../services/chat_service.dart';
 import '../services/cursor_agent_service.dart';
+import '../services/job_polling_service.dart';
 import '../widgets/message_bubble.dart';
 import '../utils/theme.dart';
 
@@ -20,30 +24,82 @@ class ChatDetailScreen extends StatefulWidget {
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
 }
 
-class _ChatDetailScreenState extends State<ChatDetailScreen> {
+class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   late Chat _chat;
   late CursorAgentService _agentService;
+  late JobPollingService _pollingService;
   bool _isLoading = false;
   bool _isSending = false;
+  
+  // Track active jobs and pending messages
+  final Map<String, Message> _pendingMessages = {}; // jobId -> Message
+  Timer? _uiUpdateTimer;
+  int _activeJobCount = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _chat = widget.chat;
     _agentService = CursorAgentService();
+    _pollingService = JobPollingService(agentService: _agentService);
     _loadFullChat();
+    _startUiUpdateTimer();
+    _resumeActiveJobs();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _uiUpdateTimer?.cancel();
+    _pollingService.stopAll();
     _scrollController.dispose();
     _messageController.dispose();
     _focusNode.dispose();
     _agentService.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Resume polling and refresh when app comes back to foreground
+      _resumeActiveJobs();
+      _loadFullChat();
+    }
+  }
+
+  void _startUiUpdateTimer() {
+    // Update UI every second to refresh elapsed time
+    _uiUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _activeJobCount > 0) {
+        setState(() {});
+      }
+    });
+  }
+
+  Future<void> _resumeActiveJobs() async {
+    // Check for any active jobs from the backend and resume polling
+    try {
+      final jobs = await _agentService.listChatJobs(
+        _chat.id,
+        limit: 10,
+        statusFilter: 'processing',
+      );
+      
+      for (final job in jobs) {
+        if (job.isProcessing) {
+          _startPollingJob(job.jobId);
+        }
+      }
+      
+      _updateActiveJobCount();
+    } catch (e) {
+      // Silently fail - not critical
+    }
   }
 
   Future<void> _loadFullChat({bool animateScroll = false}) async {
@@ -106,29 +162,67 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _sendMessage() async {
     // Validate input
-    final message = _messageController.text.trim();
-    if (message.isEmpty || _isSending) {
+    final messageText = _messageController.text.trim();
+    if (messageText.isEmpty || _isSending) {
       return;
     }
 
     // Dismiss keyboard
     _focusNode.unfocus();
 
+    // Clear input immediately for better UX
+    _messageController.clear();
+
     setState(() => _isSending = true);
 
     try {
-      // Send message via cursor-agent
-      await _agentService.continueConversation(
+      // Submit prompt asynchronously
+      final job = await _agentService.submitPromptAsync(
         _chat.id,
-        message,
-        showContext: false,
+        messageText,
       );
 
-      // Clear input on success
-      _messageController.clear();
+      // Create a pending message to show in UI
+      final pendingMessage = Message(
+        id: job.jobId,
+        bubbleId: '',
+        content: messageText,
+        role: MessageRole.user,
+        timestamp: DateTime.now(),
+        type: 1,
+        typeLabel: 'user',
+        status: MessageStatus.processing,
+        jobId: job.jobId,
+        sentAt: DateTime.now(),
+        processingStartedAt: DateTime.now(),
+      );
 
-      // Reload chat to show new messages with animated scroll
-      await _loadFullChat(animateScroll: true);
+      // Add to chat messages and pending messages
+      setState(() {
+        _chat = Chat(
+          id: _chat.id,
+          title: _chat.title,
+          status: _chat.status,
+          createdAt: _chat.createdAt,
+          lastMessageAt: DateTime.now(),
+          messages: [..._chat.messages, pendingMessage],
+          isArchived: _chat.isArchived,
+          isDraft: _chat.isDraft,
+          totalLinesAdded: _chat.totalLinesAdded,
+          totalLinesRemoved: _chat.totalLinesRemoved,
+          subtitle: _chat.subtitle,
+          unifiedMode: _chat.unifiedMode,
+          contextUsagePercent: _chat.contextUsagePercent,
+        );
+        _pendingMessages[job.jobId] = pendingMessage;
+      });
+
+      // Scroll to bottom to show new message
+      _scrollToBottom(animate: true);
+
+      // Start polling for job status
+      _startPollingJob(job.jobId);
+      
     } catch (e) {
       // Show error dialog
       if (mounted) {
@@ -137,6 +231,208 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           builder: (context) => CupertinoAlertDialog(
             title: const Text('Error'),
             content: Text('Failed to send message: $e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSending = false);
+      }
+    }
+  }
+
+  void _startPollingJob(String jobId) {
+    _pollingService.startPolling(
+      jobId,
+      onUpdate: (job) {
+        _handleJobUpdate(job);
+      },
+      onComplete: (job) {
+        _handleJobComplete(job);
+      },
+      onFailed: (job, error) {
+        _handleJobFailed(job, error);
+      },
+    );
+    _updateActiveJobCount();
+  }
+
+  void _handleJobUpdate(Job job) {
+    if (!mounted) return;
+    
+    // Update the pending message with latest job info
+    setState(() {
+      if (_pendingMessages.containsKey(job.jobId)) {
+        final message = _pendingMessages[job.jobId]!;
+        final updatedMessage = message.copyWith(
+          status: job.status == JobStatus.processing
+              ? MessageStatus.processing
+              : MessageStatus.pending,
+          processingStartedAt: job.startedAt,
+        );
+        
+        // Update in messages list
+        final index = _chat.messages.indexWhere((m) => m.jobId == job.jobId);
+        if (index >= 0) {
+          final updatedMessages = List<Message>.from(_chat.messages);
+          updatedMessages[index] = updatedMessage;
+          _chat = Chat(
+            id: _chat.id,
+            title: _chat.title,
+            status: _chat.status,
+            createdAt: _chat.createdAt,
+            lastMessageAt: _chat.lastMessageAt,
+            messages: updatedMessages,
+            isArchived: _chat.isArchived,
+            isDraft: _chat.isDraft,
+            totalLinesAdded: _chat.totalLinesAdded,
+            totalLinesRemoved: _chat.totalLinesRemoved,
+            subtitle: _chat.subtitle,
+            unifiedMode: _chat.unifiedMode,
+            contextUsagePercent: _chat.contextUsagePercent,
+          );
+          _pendingMessages[job.jobId] = updatedMessage;
+        }
+      }
+    });
+  }
+
+  void _handleJobComplete(Job job) {
+    if (!mounted) return;
+    
+    // Remove from pending and reload chat to get the actual messages
+    _pendingMessages.remove(job.jobId);
+    _updateActiveJobCount();
+    _loadFullChat(animateScroll: true);
+  }
+
+  void _handleJobFailed(Job job, String error) {
+    if (!mounted) return;
+    
+    // Update the message to show failed status
+    setState(() {
+      if (_pendingMessages.containsKey(job.jobId)) {
+        final message = _pendingMessages[job.jobId]!;
+        final updatedMessage = message.copyWith(
+          status: MessageStatus.failed,
+          completedAt: DateTime.now(),
+          errorMessage: error,
+        );
+        
+        // Update in messages list
+        final index = _chat.messages.indexWhere((m) => m.jobId == job.jobId);
+        if (index >= 0) {
+          final updatedMessages = List<Message>.from(_chat.messages);
+          updatedMessages[index] = updatedMessage;
+          _chat = Chat(
+            id: _chat.id,
+            title: _chat.title,
+            status: _chat.status,
+            createdAt: _chat.createdAt,
+            lastMessageAt: _chat.lastMessageAt,
+            messages: updatedMessages,
+            isArchived: _chat.isArchived,
+            isDraft: _chat.isDraft,
+            totalLinesAdded: _chat.totalLinesAdded,
+            totalLinesRemoved: _chat.totalLinesRemoved,
+            subtitle: _chat.subtitle,
+            unifiedMode: _chat.unifiedMode,
+            contextUsagePercent: _chat.contextUsagePercent,
+          );
+        }
+        
+        _pendingMessages.remove(job.jobId);
+      }
+    });
+    
+    _updateActiveJobCount();
+  }
+
+  void _updateActiveJobCount() {
+    setState(() {
+      _activeJobCount = _pollingService.activeJobIds.length;
+    });
+  }
+
+  Future<void> _retryMessage(Message failedMessage) async {
+    // Remove the failed message
+    setState(() {
+      _chat = Chat(
+        id: _chat.id,
+        title: _chat.title,
+        status: _chat.status,
+        createdAt: _chat.createdAt,
+        lastMessageAt: _chat.lastMessageAt,
+        messages: _chat.messages.where((m) => m.id != failedMessage.id).toList(),
+        isArchived: _chat.isArchived,
+        isDraft: _chat.isDraft,
+        totalLinesAdded: _chat.totalLinesAdded,
+        totalLinesRemoved: _chat.totalLinesRemoved,
+        subtitle: _chat.subtitle,
+        unifiedMode: _chat.unifiedMode,
+        contextUsagePercent: _chat.contextUsagePercent,
+      );
+    });
+
+    // Retry by submitting the prompt again
+    setState(() => _isSending = true);
+
+    try {
+      final job = await _agentService.submitPromptAsync(
+        _chat.id,
+        failedMessage.content,
+      );
+
+      // Create a new pending message
+      final pendingMessage = Message(
+        id: job.jobId,
+        bubbleId: '',
+        content: failedMessage.content,
+        role: MessageRole.user,
+        timestamp: DateTime.now(),
+        type: 1,
+        typeLabel: 'user',
+        status: MessageStatus.processing,
+        jobId: job.jobId,
+        sentAt: DateTime.now(),
+        processingStartedAt: DateTime.now(),
+      );
+
+      setState(() {
+        _chat = Chat(
+          id: _chat.id,
+          title: _chat.title,
+          status: _chat.status,
+          createdAt: _chat.createdAt,
+          lastMessageAt: DateTime.now(),
+          messages: [..._chat.messages, pendingMessage],
+          isArchived: _chat.isArchived,
+          isDraft: _chat.isDraft,
+          totalLinesAdded: _chat.totalLinesAdded,
+          totalLinesRemoved: _chat.totalLinesRemoved,
+          subtitle: _chat.subtitle,
+          unifiedMode: _chat.unifiedMode,
+          contextUsagePercent: _chat.contextUsagePercent,
+        );
+        _pendingMessages[job.jobId] = pendingMessage;
+      });
+
+      _scrollToBottom(animate: true);
+      _startPollingJob(job.jobId);
+      
+    } catch (e) {
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('Error'),
+            content: Text('Failed to retry message: $e'),
             actions: [
               CupertinoDialogAction(
                 child: const Text('OK'),
@@ -282,11 +578,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  _chat.status.name,
+                  _activeJobCount > 0
+                      ? '$_activeJobCount processing'
+                      : _chat.status.name,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.normal,
-                    color: isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary,
+                    color: _activeJobCount > 0
+                        ? AppTheme.thinkingColor
+                        : (isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary),
                   ),
                 ),
               ],
@@ -340,7 +640,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                           sliver: SliverList(
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
-                                return MessageBubble(message: _chat.messages[index]);
+                                final message = _chat.messages[index];
+                                return MessageBubble(
+                                  message: message,
+                                  onRetry: message.isFailed && message.role == MessageRole.user
+                                      ? () => _retryMessage(message)
+                                      : null,
+                                );
                               },
                               childCount: _chat.messages.length,
                             ),

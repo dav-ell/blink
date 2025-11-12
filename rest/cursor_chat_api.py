@@ -9,25 +9,135 @@ Author: Generated for Cursor Chat Timeline Project
 Version: 1.0
 """
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 import uvicorn
 import os
 import subprocess
 import uuid as uuid_lib
+from enum import Enum
+import asyncio
+import threading
+from dataclasses import dataclass, field, asdict
 
 # Database path - adjust if needed
 DB_PATH = os.path.expanduser('~/Library/Application Support/Cursor/User/globalStorage/state.vscdb')
 
+# ============================================================================
+# Job Tracking System
+# ============================================================================
+
+class JobStatus(str, Enum):
+    """Status of an async job"""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+@dataclass
+class Job:
+    """Represents an async cursor-agent job"""
+    job_id: str
+    chat_id: str
+    prompt: str
+    status: JobStatus
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    result: Optional[str] = None
+    error: Optional[str] = None
+    user_bubble_id: Optional[str] = None
+    assistant_bubble_id: Optional[str] = None
+    model: Optional[str] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        data = asdict(self)
+        # Convert datetime objects to ISO strings
+        for key in ['created_at', 'started_at', 'completed_at']:
+            if data[key]:
+                data[key] = data[key].isoformat()
+        data['status'] = self.status.value
+        return data
+    
+    def elapsed_seconds(self) -> Optional[float]:
+        """Get elapsed time in seconds"""
+        if self.started_at:
+            end_time = self.completed_at or datetime.now(timezone.utc)
+            return (end_time - self.started_at).total_seconds()
+        return None
+
+# In-memory job storage
+jobs_storage: Dict[str, Job] = {}
+jobs_lock = threading.Lock()
+
+def create_job(chat_id: str, prompt: str, model: Optional[str] = None) -> Job:
+    """Create a new job and store it"""
+    job_id = str(uuid_lib.uuid4())
+    job = Job(
+        job_id=job_id,
+        chat_id=chat_id,
+        prompt=prompt,
+        status=JobStatus.PENDING,
+        created_at=datetime.now(timezone.utc),
+        model=model
+    )
+    
+    with jobs_lock:
+        jobs_storage[job_id] = job
+    
+    return job
+
+def get_job(job_id: str) -> Optional[Job]:
+    """Get a job by ID"""
+    with jobs_lock:
+        return jobs_storage.get(job_id)
+
+def update_job(job_id: str, **updates) -> Optional[Job]:
+    """Update job fields"""
+    with jobs_lock:
+        job = jobs_storage.get(job_id)
+        if job:
+            for key, value in updates.items():
+                if hasattr(job, key):
+                    setattr(job, key, value)
+        return job
+
+def get_chat_jobs(chat_id: str, limit: int = 20) -> List[Job]:
+    """Get all jobs for a chat, newest first"""
+    with jobs_lock:
+        chat_jobs = [job for job in jobs_storage.values() if job.chat_id == chat_id]
+    
+    # Sort by created_at descending
+    chat_jobs.sort(key=lambda j: j.created_at, reverse=True)
+    return chat_jobs[:limit]
+
+def cleanup_old_jobs(max_age_hours: int = 1):
+    """Remove completed/failed jobs older than max_age_hours"""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    
+    with jobs_lock:
+        to_remove = []
+        for job_id, job in jobs_storage.items():
+            if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
+                if job.completed_at and job.completed_at < cutoff:
+                    to_remove.append(job_id)
+        
+        for job_id in to_remove:
+            del jobs_storage[job_id]
+    
+    return len(to_remove)
+
 app = FastAPI(
     title="Cursor Chat API",
-    version="1.0.0",
-    description="REST API for Cursor chat database with direct SQLite queries"
+    version="2.0.0",
+    description="REST API for Cursor chat database with async job support"
 )
 
 # Enable CORS for web access
@@ -228,22 +338,76 @@ def extract_thinking(bubble: Dict) -> Optional[str]:
 
 def extract_separated_content(bubble: Dict) -> Dict[str, Any]:
     """Extract content separated by type"""
+    # Handle todos - may be strings or objects in database
+    todos = bubble.get('todos')
+    if todos and isinstance(todos, list):
+        # Filter out non-dict items (strings from Cursor IDE)
+        todos = [t for t in todos if isinstance(t, dict)]
+        if not todos:
+            todos = None
+    
+    # Handle code blocks - may be strings or objects
+    code_blocks = bubble.get('codeBlocks')
+    if code_blocks and isinstance(code_blocks, list):
+        # Filter out non-dict items
+        code_blocks = [cb for cb in code_blocks if isinstance(cb, dict)]
+        if not code_blocks:
+            code_blocks = None
+    
     return {
         "text": bubble.get('text', ''),
         "tool_calls": extract_tool_calls(bubble),
         "thinking": extract_thinking(bubble),
-        "code_blocks": bubble.get('codeBlocks'),
-        "todos": bubble.get('todos')
+        "code_blocks": code_blocks,
+        "todos": todos
     }
 
 def create_bubble_data(bubble_id: str, message_type: int, text: str) -> Dict[str, Any]:
-    """Create a minimal bubble data structure matching Cursor's format"""
-    return {
+    """Create a complete bubble data structure matching Cursor's format
+    
+    This includes all fields that Cursor expects to properly load and display chats.
+    Missing fields can cause the Cursor IDE to fail when loading the chat.
+    """
+    
+    # Generate a unique request ID for this bubble
+    request_id = str(uuid_lib.uuid4())
+    checkpoint_id = str(uuid_lib.uuid4())
+    
+    # Create Lexical editor richText structure
+    rich_text = {
+        "root": {
+            "children": [{
+                "children": [{
+                    "detail": 0,
+                    "format": 0,
+                    "mode": "normal",
+                    "style": "",
+                    "text": text,
+                    "type": "text",
+                    "version": 1
+                }],
+                "direction": None,
+                "format": "",
+                "indent": 0,
+                "type": "paragraph",
+                "version": 1
+            }],
+            "direction": None,
+            "format": "",
+            "indent": 0,
+            "type": "root",
+            "version": 1
+        }
+    }
+    
+    bubble = {
         "_v": 3,
         "type": message_type,  # 1=user, 2=assistant
         "text": text,
         "bubbleId": bubble_id,
         "createdAt": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        
+        # Core arrays (usually empty for basic messages)
         "approximateLintErrors": [],
         "lints": [],
         "codebaseContextChunks": [],
@@ -259,23 +423,109 @@ def create_bubble_data(bubble_id: str, message_type: int, text: str) -> Dict[str
         "toolResults": [],
         "notepads": [],
         "capabilities": [],
-        "capabilityStatuses": {},
         "multiFileLinterErrors": [],
         "diffHistories": [],
         "recentLocationsHistory": [],
         "recentlyViewedFiles": [],
-        "isAgentic": False,
         "fileDiffTrajectories": [],
-        "existedSubsequentTerminalCommand": False,
-        "existedPreviousTerminalCommand": False,
         "docsReferences": [],
         "webReferences": [],
         "aiWebSearchResults": [],
-        "requestId": "",
         "attachedFoldersListDirResults": [],
         "humanChanges": [],
-        "attachedHumanChanges": False
+        
+        # Additional arrays required by Cursor
+        "allThinkingBlocks": [],
+        "attachedFileCodeChunksMetadataOnly": [],
+        "capabilityContexts": [],
+        "consoleLogs": [],
+        "contextPieces": [],
+        "cursorRules": [],
+        "deletedFiles": [],
+        "diffsForCompressingFiles": [],
+        "diffsSinceLastApply": [],
+        "documentationSelections": [],
+        "editTrailContexts": [],
+        "externalLinks": [],
+        "knowledgeItems": [],
+        "projectLayouts": [],
+        "relevantFiles": [],
+        "suggestedCodeBlocks": [],
+        "summarizedComposers": [],
+        "todos": [],
+        "uiElementPicked": [],
+        "userResponsesToSuggestedCodeBlocks": [],
+        
+        # Capability statuses (required structure)
+        "capabilityStatuses": {
+            "mutate-request": [],
+            "start-submit-chat": [],
+            "before-submit-chat": [],
+            "chat-stream-finished": [],
+            "before-apply": [],
+            "after-apply": [],
+            "accept-all-edits": [],
+            "composer-done": [],
+            "process-stream": [],
+            "add-pending-action": []
+        },
+        
+        # Boolean flags
+        "isAgentic": message_type == 1,  # True for user messages
+        "existedSubsequentTerminalCommand": False,
+        "existedPreviousTerminalCommand": False,
+        "editToolSupportsSearchAndReplace": True,
+        "isNudge": False,
+        "isPlanExecution": False,
+        "isQuickSearchQuery": False,
+        "isRefunded": False,
+        "skipRendering": False,
+        "useWeb": False,
+        
+        # Critical fields for Cursor IDE
+        "supportedTools": [1, 41, 7, 38, 8, 9, 11, 12, 15, 18, 19, 25, 27, 43, 46, 47, 29, 30, 32, 34, 35, 39, 40, 42, 44, 45],
+        "tokenCount": {
+            "inputTokens": 0,
+            "outputTokens": 0
+        },
+        "context": {
+            "composers": [],
+            "quotes": [],
+            "selectedCommits": [],
+            "selectedPullRequests": [],
+            "selectedImages": [],
+            "folderSelections": [],
+            "fileSelections": [],
+            "terminalFiles": [],
+            "selections": [],
+            "terminalSelections": [],
+            "selectedDocs": [],
+            "externalLinks": [],
+            "cursorRules": [],
+            "cursorCommands": [],
+            "uiElementSelections": [],
+            "consoleLogs": [],
+            "mentions": []
+        },
+        
+        # Identifiers
+        "requestId": request_id,
+        "checkpointId": checkpoint_id,
+        
+        # Rich text representation (Lexical editor format)
+        "richText": json.dumps(rich_text),
+        
+        # Unified mode (standard value)
+        "unifiedMode": 5,
     }
+    
+    # Add model info for assistant messages
+    if message_type == 2:
+        bubble["modelInfo"] = {
+            "modelName": "claude-4.5-sonnet"
+        }
+    
+    return bubble
 
 def save_message_to_db(
     conn: sqlite3.Connection,
@@ -298,7 +548,10 @@ def update_chat_metadata(
     chat_id: str,
     new_bubble_ids: List[tuple]  # [(bubble_id, type), ...]
 ) -> None:
-    """Update chat metadata to include new messages"""
+    """Update chat metadata to include new messages
+    
+    Ensures all required fields are present for Cursor IDE compatibility.
+    """
     cursor = conn.cursor()
     
     # Get existing metadata
@@ -311,6 +564,34 @@ def update_chat_metadata(
         raise ValueError(f"Chat {chat_id} not found")
     
     metadata = json.loads(row[0])
+    
+    # Ensure critical fields exist
+    if '_v' not in metadata:
+        metadata['_v'] = 10
+    
+    if 'hasLoaded' not in metadata:
+        metadata['hasLoaded'] = True
+    
+    if 'text' not in metadata:
+        metadata['text'] = ""
+    
+    # Ensure richText exists (Lexical editor state)
+    if 'richText' not in metadata:
+        metadata['richText'] = json.dumps({
+            "root": {
+                "children": [{
+                    "children": [],
+                    "format": "",
+                    "indent": 0,
+                    "type": "paragraph",
+                    "version": 1
+                }],
+                "format": "",
+                "indent": 0,
+                "type": "root",
+                "version": 1
+            }
+        })
     
     # Add new messages to headers
     headers = metadata.get('fullConversationHeadersOnly', [])
@@ -347,8 +628,8 @@ def root():
     """API information and available endpoints"""
     return {
         "name": "Cursor Chat API",
-        "version": "2.1.0",
-        "description": "REST API for Cursor chat database with cursor-agent integration",
+        "version": "2.0.0",
+        "description": "REST API for Cursor chat database with async job support",
         "database": DB_PATH,
         "cursor_agent": {
             "installed": os.path.exists(CURSOR_AGENT_PATH),
@@ -360,14 +641,22 @@ def root():
             "GET /chats": "List all chats with metadata",
             "GET /chats/{chat_id}": "Get all messages for a specific chat",
             "GET /chats/{chat_id}/metadata": "Get metadata for a specific chat",
-            "GET /chats/{chat_id}/summary": "Get chat summary optimized for UI (NEW v2.1)",
+            "GET /chats/{chat_id}/summary": "Get chat summary optimized for UI",
             "POST /chats/{chat_id}/messages": "Send a message to a chat (DANGEROUS - disabled by default)",
-            "POST /chats/{chat_id}/agent-prompt": "Send prompt to cursor-agent with chat history",
-            "POST /chats/batch-info": "Get info for multiple chats at once (NEW v2.1)",
+            "POST /chats/{chat_id}/agent-prompt": "Send prompt to cursor-agent (synchronous, blocks until complete)",
+            "POST /chats/{chat_id}/agent-prompt-async": "Submit prompt asynchronously (NEW v2.0 - returns immediately)",
+            "GET /jobs/{job_id}": "Get full job details including status and result (NEW v2.0)",
+            "GET /jobs/{job_id}/status": "Quick status check for a job (NEW v2.0)",
+            "GET /chats/{chat_id}/jobs": "List all jobs for a chat (NEW v2.0)",
+            "DELETE /jobs/{job_id}": "Cancel a pending or processing job (NEW v2.0)",
+            "POST /chats/batch-info": "Get info for multiple chats at once",
             "POST /agent/create-chat": "Create new cursor-agent chat",
             "GET /agent/models": "List available AI models"
         },
         "features": {
+            "async_jobs": "Submit prompts asynchronously and poll for results (NEW v2.0)",
+            "concurrent_processing": "Run multiple cursor-agent calls simultaneously (NEW v2.0)",
+            "job_tracking": "Track job status with elapsed time and detailed results (NEW v2.0)",
             "chat_continuation": "Continue existing Cursor conversations seamlessly",
             "context_preview": "Get recent messages before continuing",
             "batch_operations": "Fetch multiple chat summaries at once",
@@ -837,6 +1126,131 @@ def run_cursor_agent(
             "command": ' '.join(cmd) if 'cmd' in locals() else "unknown"
         }
 
+def execute_job_in_background(job_id: str):
+    """
+    Execute a cursor-agent job in the background
+    
+    This function:
+    1. Marks job as processing
+    2. Writes user message to database
+    3. Calls cursor-agent
+    4. Writes AI response to database
+    5. Updates job status (completed or failed)
+    """
+    job = get_job(job_id)
+    if not job:
+        return
+    
+    try:
+        # Mark as processing
+        update_job(
+            job_id,
+            status=JobStatus.PROCESSING,
+            started_at=datetime.now(timezone.utc)
+        )
+        
+        # Get database connection
+        conn = get_db_connection()
+        
+        try:
+            # Verify chat exists
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT value FROM cursorDiskKV WHERE key = ?",
+                (f'composerData:{job.chat_id}',)
+            )
+            if not cursor.fetchone():
+                raise ValueError(f"Chat {job.chat_id} not found")
+            
+            # Start transaction
+            conn.execute("BEGIN TRANSACTION")
+            
+            # Generate bubble IDs
+            user_bubble_id = str(uuid_lib.uuid4())
+            assistant_bubble_id = str(uuid_lib.uuid4())
+            
+            # Create and save user message bubble
+            user_bubble = create_bubble_data(user_bubble_id, 1, job.prompt)
+            if not validate_bubble_structure(user_bubble):
+                raise ValueError("Invalid user bubble structure")
+            
+            save_message_to_db(conn, job.chat_id, user_bubble_id, user_bubble)
+            
+            # Call cursor-agent for AI response
+            result = run_cursor_agent(
+                chat_id=job.chat_id,
+                prompt=job.prompt,
+                model=job.model,
+                output_format="text",
+                timeout=120  # 2 minutes for async jobs
+            )
+            
+            if not result["success"]:
+                # Rollback on cursor-agent failure
+                conn.rollback()
+                conn.close()
+                
+                update_job(
+                    job_id,
+                    status=JobStatus.FAILED,
+                    completed_at=datetime.now(timezone.utc),
+                    error=f"cursor-agent failed: {result['stderr']}"
+                )
+                return
+            
+            # Parse AI response
+            ai_response_text = result["stdout"].strip()
+            
+            # Create and save AI response bubble
+            assistant_bubble = create_bubble_data(assistant_bubble_id, 2, ai_response_text)
+            if not validate_bubble_structure(assistant_bubble):
+                conn.rollback()
+                conn.close()
+                
+                update_job(
+                    job_id,
+                    status=JobStatus.FAILED,
+                    completed_at=datetime.now(timezone.utc),
+                    error="Invalid assistant bubble structure"
+                )
+                return
+            
+            save_message_to_db(conn, job.chat_id, assistant_bubble_id, assistant_bubble)
+            
+            # Update chat metadata with both messages
+            update_chat_metadata(conn, job.chat_id, [
+                (user_bubble_id, 1),
+                (assistant_bubble_id, 2)
+            ])
+            
+            # Commit transaction
+            conn.commit()
+            conn.close()
+            
+            # Mark job as completed
+            update_job(
+                job_id,
+                status=JobStatus.COMPLETED,
+                completed_at=datetime.now(timezone.utc),
+                result=ai_response_text,
+                user_bubble_id=user_bubble_id,
+                assistant_bubble_id=assistant_bubble_id
+            )
+            
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            raise e
+            
+    except Exception as e:
+        # Mark job as failed
+        update_job(
+            job_id,
+            status=JobStatus.FAILED,
+            completed_at=datetime.now(timezone.utc),
+            error=str(e)
+        )
+
 @app.post("/chats/{chat_id}/agent-prompt")
 def send_agent_prompt(
     chat_id: str,
@@ -872,15 +1286,54 @@ def send_agent_prompt(
     conn = get_db_connection()
     
     try:
-        # Verify chat exists
+        # Check if chat exists, create if it doesn't
         cursor = conn.cursor()
         cursor.execute(
             "SELECT value FROM cursorDiskKV WHERE key = ?",
             (f'composerData:{chat_id}',)
         )
-        if not cursor.fetchone():
-            conn.close()
-            raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
+        existing_chat = cursor.fetchone()
+        
+        if not existing_chat:
+            # Chat doesn't exist - create minimal metadata
+            # This happens when using /agent/create-chat which only generates an ID
+            now_ms = int(datetime.now().timestamp() * 1000)
+            
+            chat_metadata = {
+                "_v": 10,
+                "composerId": chat_id,
+                "name": "Untitled",
+                "richText": json.dumps({
+                    "root": {
+                        "children": [{
+                            "children": [],
+                            "format": "",
+                            "indent": 0,
+                            "type": "paragraph",
+                            "version": 1
+                        }],
+                        "format": "",
+                        "indent": 0,
+                        "type": "root",
+                        "version": 1
+                    }
+                }),
+                "hasLoaded": True,
+                "text": "",
+                "fullConversationHeadersOnly": [],
+                "createdAt": now_ms,
+                "lastUpdatedAt": now_ms,
+                "isArchived": False,
+                "isDraft": False,
+                "totalLinesAdded": 0,
+                "totalLinesRemoved": 0,
+            }
+            
+            cursor.execute(
+                "INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)",
+                (f'composerData:{chat_id}', json.dumps(chat_metadata))
+            )
+            conn.commit()
         
         # Start transaction
         conn.execute("BEGIN TRANSACTION")
@@ -966,6 +1419,238 @@ def send_agent_prompt(
         )
     finally:
         conn.close()
+
+# ============================================================================
+# Async Job Endpoints
+# ============================================================================
+
+@app.post("/chats/{chat_id}/agent-prompt-async")
+def submit_prompt_async(
+    chat_id: str,
+    request: AgentPromptRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Submit a prompt asynchronously and return immediately with job ID
+    
+    The job will be processed in the background. Use GET /jobs/{job_id}
+    to check status and retrieve the result when complete.
+    
+    **Usage:**
+    ```
+    POST /chats/{chat_id}/agent-prompt-async
+    {
+        "prompt": "What did we discuss about authentication?",
+        "model": "gpt-5"
+    }
+    
+    Response:
+    {
+        "job_id": "abc-123-def",
+        "status": "pending",
+        "chat_id": "...",
+        "message": "Job submitted successfully"
+    }
+    ```
+    """
+    if not os.path.exists(CURSOR_AGENT_PATH):
+        raise HTTPException(
+            status_code=503,
+            detail=f"cursor-agent not found at {CURSOR_AGENT_PATH}"
+        )
+    
+    # Verify chat exists
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT value FROM cursorDiskKV WHERE key = ?",
+            (f'composerData:{chat_id}',)
+        )
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
+        conn.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking chat: {str(e)}")
+    
+    # Create job
+    job = create_job(chat_id, request.prompt, request.model)
+    
+    # Schedule background execution
+    background_tasks.add_task(execute_job_in_background, job.job_id)
+    
+    return {
+        "job_id": job.job_id,
+        "status": job.status.value,
+        "chat_id": job.chat_id,
+        "message": "Job submitted successfully",
+        "created_at": job.created_at.isoformat()
+    }
+
+@app.get("/jobs/{job_id}")
+def get_job_details(job_id: str):
+    """
+    Get full job details including status and result
+    
+    **Response for completed job:**
+    ```json
+    {
+        "job_id": "...",
+        "chat_id": "...",
+        "status": "completed",
+        "prompt": "...",
+        "result": "AI response text...",
+        "created_at": "2025-11-12T10:00:00Z",
+        "started_at": "2025-11-12T10:00:01Z",
+        "completed_at": "2025-11-12T10:00:15Z",
+        "elapsed_seconds": 14.5,
+        "user_bubble_id": "...",
+        "assistant_bubble_id": "..."
+    }
+    ```
+    
+    **Response for failed job:**
+    ```json
+    {
+        "job_id": "...",
+        "status": "failed",
+        "error": "cursor-agent failed: ...",
+        ...
+    }
+    ```
+    """
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    
+    response = job.to_dict()
+    response['elapsed_seconds'] = job.elapsed_seconds()
+    
+    return response
+
+@app.get("/jobs/{job_id}/status")
+def get_job_status_quick(job_id: str):
+    """
+    Quick status check (lighter response than full job details)
+    
+    **Response:**
+    ```json
+    {
+        "job_id": "...",
+        "status": "processing",
+        "elapsed_seconds": 5.2
+    }
+    ```
+    """
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    
+    return {
+        "job_id": job.job_id,
+        "status": job.status.value,
+        "elapsed_seconds": job.elapsed_seconds()
+    }
+
+@app.get("/chats/{chat_id}/jobs")
+def list_chat_jobs(
+    chat_id: str,
+    limit: int = Query(20, description="Maximum number of jobs to return"),
+    status_filter: Optional[str] = Query(None, description="Filter by status (pending, processing, completed, failed)")
+):
+    """
+    List all jobs for a chat
+    
+    **Usage:**
+    ```
+    GET /chats/{chat_id}/jobs?limit=10&status_filter=processing
+    ```
+    
+    **Response:**
+    ```json
+    {
+        "chat_id": "...",
+        "total": 15,
+        "jobs": [
+            {
+                "job_id": "...",
+                "status": "processing",
+                "prompt": "...",
+                "created_at": "...",
+                "elapsed_seconds": 5.2
+            },
+            ...
+        ]
+    }
+    ```
+    """
+    jobs = get_chat_jobs(chat_id, limit)
+    
+    # Filter by status if requested
+    if status_filter:
+        try:
+            filter_status = JobStatus(status_filter)
+            jobs = [j for j in jobs if j.status == filter_status]
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status filter. Valid values: {[s.value for s in JobStatus]}"
+            )
+    
+    jobs_data = []
+    for job in jobs:
+        job_dict = job.to_dict()
+        job_dict['elapsed_seconds'] = job.elapsed_seconds()
+        jobs_data.append(job_dict)
+    
+    return {
+        "chat_id": chat_id,
+        "total": len(jobs_data),
+        "jobs": jobs_data
+    }
+
+@app.delete("/jobs/{job_id}")
+def cancel_job(job_id: str):
+    """
+    Cancel a pending or processing job
+    
+    Note: Jobs that are already being executed by cursor-agent cannot be
+    interrupted, but will be marked as cancelled once they complete.
+    
+    **Response:**
+    ```json
+    {
+        "job_id": "...",
+        "status": "cancelled",
+        "message": "Job cancelled successfully"
+    }
+    ```
+    """
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    
+    if job.status in [JobStatus.COMPLETED, JobStatus.FAILED]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel job with status: {job.status.value}"
+        )
+    
+    update_job(
+        job_id,
+        status=JobStatus.CANCELLED,
+        completed_at=datetime.now(timezone.utc),
+        error="Cancelled by user"
+    )
+    
+    return {
+        "job_id": job_id,
+        "status": "cancelled",
+        "message": "Job cancelled successfully"
+    }
 
 @app.post("/agent/create-chat")
 def create_agent_chat():
