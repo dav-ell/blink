@@ -35,7 +35,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     _chat = widget.chat;
     _agentService = CursorAgentService();
     _loadFullChat();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
   @override
@@ -47,7 +46,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     super.dispose();
   }
 
-  Future<void> _loadFullChat() async {
+  Future<void> _loadFullChat({bool animateScroll = false}) async {
     setState(() => _isLoading = true);
     try {
       final fullChat = await widget.chatService.fetchChat(
@@ -58,7 +57,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         _chat = fullChat;
         _isLoading = false;
       });
-      _scrollToBottom();
+      // Scroll to bottom after UI is built
+      // Use instant jump for initial load, animation for updates
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToBottom(animate: animateScroll),
+      );
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
@@ -79,13 +82,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     }
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool animate = true}) {
     if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      // Use a slight delay to ensure content is fully laid out
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (_scrollController.hasClients) {
+          if (animate) {
+            _scrollController.animateTo(
+              _scrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          } else {
+            // Jump instantly for initial load (like iMessage)
+            _scrollController.jumpTo(
+              _scrollController.position.maxScrollExtent,
+            );
+          }
+        }
+      });
     }
   }
 
@@ -112,11 +127,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       // Clear input on success
       _messageController.clear();
 
-      // Reload chat to show new messages
-      await _loadFullChat();
-
-      // Scroll to bottom to show latest message
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      // Reload chat to show new messages with animated scroll
+      await _loadFullChat(animateScroll: true);
     } catch (e) {
       // Show error dialog
       if (mounted) {
@@ -304,6 +316,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         ),
       ),
       child: SafeArea(
+        bottom: false,
         child: Column(
           children: [
             // Chat statistics header
@@ -338,7 +351,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
 
             // Message input
-            _buildMessageInput(),
+            SafeArea(
+              top: false,
+              child: _buildMessageInput(),
+            ),
           ],
         ),
       ),
@@ -523,11 +539,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final canSend = _messageController.text.trim().isNotEmpty && !_isSending;
 
     return Container(
-      padding: EdgeInsets.only(
+      padding: const EdgeInsets.only(
         left: AppTheme.spacingMedium,
         right: AppTheme.spacingMedium,
         top: AppTheme.spacingSmall,
-        bottom: AppTheme.spacingSmall + MediaQuery.of(context).viewInsets.bottom,
+        bottom: AppTheme.spacingSmall,
       ),
       decoration: BoxDecoration(
         color: backgroundColor,

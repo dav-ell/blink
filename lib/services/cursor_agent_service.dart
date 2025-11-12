@@ -15,7 +15,7 @@ class CursorAgentService {
   final http.Client _client;
   
   CursorAgentService({
-    this.baseUrl = 'http://127.0.0.1:8000',
+    this.baseUrl = 'http://192.168.1.120:8000',
     http.Client? client,
   }) : _client = client ?? http.Client();
 

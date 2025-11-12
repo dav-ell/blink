@@ -98,7 +98,7 @@ class MessageBubble extends StatelessWidget {
 
                   // Message text
                   if (message.content.isNotEmpty)
-                    Text(
+                    SelectableText(
                       message.content,
                       style: TextStyle(
                         color: isUser ? Colors.white : AppTheme.textPrimary,

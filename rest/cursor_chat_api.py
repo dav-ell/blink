@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 import uvicorn
@@ -134,20 +134,33 @@ def extract_message_content(bubble: Dict) -> str:
     # Tool calls
     if bubble.get('toolFormerData'):
         tool_data = bubble['toolFormerData']
-        tool_name = tool_data.get('name', 'unknown')
         
-        # Try to parse args for better display
-        raw_args = tool_data.get('rawArgs', '')
-        try:
-            args = json.loads(raw_args) if raw_args else {}
-            if 'explanation' in args:
-                text_parts.append(f"[Tool Call: {tool_name}]\nPurpose: {args['explanation']}")
-            elif 'command' in args:
-                text_parts.append(f"[Tool Call: {tool_name}]\nCommand: {args['command']}")
+        # Skip error tool calls that don't have a name
+        # These are incomplete/failed tool calls with only {"additionalData": {"status": "error"}}
+        if 'name' not in tool_data:
+            # Check if this is just an error case
+            if tool_data.get('additionalData', {}).get('status') == 'error':
+                # Skip showing these error tool calls entirely
+                pass
             else:
+                # Unknown tool call structure - show minimal info
+                text_parts.append(f"[Tool Call: incomplete data]")
+        else:
+            # Valid tool call with name
+            tool_name = tool_data['name']
+            
+            # Try to parse args for better display
+            raw_args = tool_data.get('rawArgs', '')
+            try:
+                args = json.loads(raw_args) if raw_args else {}
+                if 'explanation' in args:
+                    text_parts.append(f"[Tool Call: {tool_name}]\nPurpose: {args['explanation']}")
+                elif 'command' in args:
+                    text_parts.append(f"[Tool Call: {tool_name}]\nCommand: {args['command']}")
+                else:
+                    text_parts.append(f"[Tool Call: {tool_name}]")
+            except:
                 text_parts.append(f"[Tool Call: {tool_name}]")
-        except:
-            text_parts.append(f"[Tool Call: {tool_name}]")
     
     # Thinking/reasoning
     if bubble.get('thinking'):
@@ -169,6 +182,108 @@ def extract_message_content(bubble: Dict) -> str:
         text_parts.append(f"[{len(todos)} Todo Item(s)]")
     
     return '\n\n'.join(text_parts) if text_parts else '[No content]'
+
+def create_bubble_data(bubble_id: str, message_type: int, text: str) -> Dict[str, Any]:
+    """Create a minimal bubble data structure matching Cursor's format"""
+    return {
+        "_v": 3,
+        "type": message_type,  # 1=user, 2=assistant
+        "text": text,
+        "bubbleId": bubble_id,
+        "createdAt": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        "approximateLintErrors": [],
+        "lints": [],
+        "codebaseContextChunks": [],
+        "commits": [],
+        "pullRequests": [],
+        "attachedCodeChunks": [],
+        "assistantSuggestedDiffs": [],
+        "gitDiffs": [],
+        "interpreterResults": [],
+        "images": [],
+        "attachedFolders": [],
+        "attachedFoldersNew": [],
+        "toolResults": [],
+        "notepads": [],
+        "capabilities": [],
+        "capabilityStatuses": {},
+        "multiFileLinterErrors": [],
+        "diffHistories": [],
+        "recentLocationsHistory": [],
+        "recentlyViewedFiles": [],
+        "isAgentic": False,
+        "fileDiffTrajectories": [],
+        "existedSubsequentTerminalCommand": False,
+        "existedPreviousTerminalCommand": False,
+        "docsReferences": [],
+        "webReferences": [],
+        "aiWebSearchResults": [],
+        "requestId": "",
+        "attachedFoldersListDirResults": [],
+        "humanChanges": [],
+        "attachedHumanChanges": False
+    }
+
+def save_message_to_db(
+    conn: sqlite3.Connection,
+    chat_id: str,
+    bubble_id: str,
+    bubble_data: Dict[str, Any]
+) -> None:
+    """Save a message bubble to the database"""
+    cursor = conn.cursor()
+    key = f'bubbleId:{chat_id}:{bubble_id}'
+    value = json.dumps(bubble_data)
+    
+    cursor.execute(
+        "INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)",
+        (key, value)
+    )
+
+def update_chat_metadata(
+    conn: sqlite3.Connection,
+    chat_id: str,
+    new_bubble_ids: List[tuple]  # [(bubble_id, type), ...]
+) -> None:
+    """Update chat metadata to include new messages"""
+    cursor = conn.cursor()
+    
+    # Get existing metadata
+    cursor.execute(
+        "SELECT value FROM cursorDiskKV WHERE key = ?",
+        (f'composerData:{chat_id}',)
+    )
+    row = cursor.fetchone()
+    if not row:
+        raise ValueError(f"Chat {chat_id} not found")
+    
+    metadata = json.loads(row[0])
+    
+    # Add new messages to headers
+    headers = metadata.get('fullConversationHeadersOnly', [])
+    for bubble_id, msg_type in new_bubble_ids:
+        headers.append({
+            "bubbleId": bubble_id,
+            "type": msg_type
+        })
+    metadata['fullConversationHeadersOnly'] = headers
+    
+    # Update timestamp
+    metadata['lastUpdatedAt'] = int(datetime.now().timestamp() * 1000)
+    
+    # Save back
+    cursor.execute(
+        "UPDATE cursorDiskKV SET value = ? WHERE key = ?",
+        (json.dumps(metadata), f'composerData:{chat_id}')
+    )
+
+def validate_bubble_structure(bubble_data: Dict[str, Any]) -> bool:
+    """Validate that bubble has required fields matching Cursor's format"""
+    required_fields = [
+        "_v", "type", "text", "bubbleId", "createdAt",
+        "approximateLintErrors", "lints", "capabilities", "capabilityStatuses"
+    ]
+    return all(field in bubble_data for field in required_fields)
 
 # ============================================================================
 # API Endpoints
@@ -660,158 +775,131 @@ def run_cursor_agent(
 def send_agent_prompt(
     chat_id: str,
     request: AgentPromptRequest,
-    show_context: bool = Query(False, description="Include recent messages in response for context preview")
+    show_context: bool = Query(False, description="Include recent messages in response")
 ):
     """
-    Send a prompt to cursor-agent with existing chat history
+    Send a prompt with manual database persistence.
     
-    This endpoint uses cursor-agent CLI with the --resume flag to automatically
-    include all previous messages from the chat as context. The AI response is
-    generated using the full conversation history.
-    
-    **Key Features:**
-    - Maintains full conversation context via --resume
-    - Supports multiple AI models (gpt-5, sonnet-4.5, opus-4.1, etc.)
-    - Multiple output formats (text, json, stream-json)
-    - Automatic history management
-    - Optional context preview (show_context=true)
+    This endpoint:
+    1. Writes user message to database
+    2. Calls cursor-agent for AI response
+    3. Writes AI response to database
+    4. Rolls back if any step fails
     
     **Usage:**
     ```
-    POST /chats/{chat_id}/agent-prompt?show_context=true
+    POST /chats/{chat_id}/agent-prompt
     {
         "prompt": "What did we discuss about authentication?",
         "include_history": true,
-        "max_history_messages": 20,
         "model": "gpt-5",
         "output_format": "text"
     }
     ```
-    
-    **Note:** The chat_id must be a valid Cursor chat ID (can be obtained from
-    GET /chats or can be a newly created chat from cursor-agent create-chat).
     """
-    # Verify cursor-agent is installed
     if not os.path.exists(CURSOR_AGENT_PATH):
         raise HTTPException(
             status_code=503,
-            detail=f"cursor-agent not found at {CURSOR_AGENT_PATH}. Please install cursor-agent CLI."
+            detail=f"cursor-agent not found at {CURSOR_AGENT_PATH}"
         )
     
-    # Verify chat exists and optionally get context
-    chat_metadata = None
-    context = None
+    conn = get_db_connection()
     
-    if request.include_history or show_context:
-        conn = get_db_connection()
+    try:
+        # Verify chat exists
         cursor = conn.cursor()
-        
-        try:
-            # Check if chat exists in database
-            cursor.execute("""
-                SELECT value 
-                FROM cursorDiskKV 
-                WHERE key = ?
-            """, (f'composerData:{chat_id}',))
-            
-            row = cursor.fetchone()
-            if not row:
-                # Chat doesn't exist in database - might be a new cursor-agent chat
-                # Continue anyway, cursor-agent will handle it
-                pass
-            else:
-                chat_metadata = json.loads(row[0])
-                
-                # If show_context requested, fetch recent messages
-                if show_context:
-                    cursor.execute("""
-                        SELECT key, value FROM cursorDiskKV 
-                        WHERE key LIKE ? 
-                        ORDER BY key DESC LIMIT ?
-                    """, (f'bubbleId:{chat_id}:%', request.max_history_messages or 5))
-                    
-                    messages = []
-                    for key, value in cursor.fetchall():
-                        try:
-                            bubble = json.loads(value)
-                            messages.append({
-                                "role": "user" if bubble.get('type') == 1 else "assistant",
-                                "text": extract_message_content(bubble),
-                                "created_at": bubble.get('createdAt'),
-                                "has_code": bool(bubble.get('codeBlocks')),
-                                "has_thinking": bool(bubble.get('thinking')),
-                                "has_tool_call": bool(bubble.get('toolFormerData'))
-                            })
-                        except (json.JSONDecodeError, KeyError):
-                            continue
-                    
-                    # Reverse to chronological order
-                    messages.reverse()
-                    
-                    context = {
-                        "message_count": len(chat_metadata.get('fullConversationHeadersOnly', [])),
-                        "recent_messages": messages,
-                        "chat_name": chat_metadata.get('name', 'Untitled'),
-                        "last_updated": parse_timestamp(chat_metadata.get('lastUpdatedAt'))
-                    }
-        finally:
+        cursor.execute(
+            "SELECT value FROM cursorDiskKV WHERE key = ?",
+            (f'composerData:{chat_id}',)
+        )
+        if not cursor.fetchone():
             conn.close()
-    
-    # Execute cursor-agent with resume (provides history automatically)
-    result = run_cursor_agent(
-        chat_id=chat_id,
-        prompt=request.prompt,
-        model=request.model,
-        output_format=request.output_format,
-        timeout=90  # Longer timeout for agent operations
-    )
-    
-    if not result["success"]:
+            raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
+        
+        # Start transaction
+        conn.execute("BEGIN TRANSACTION")
+        
+        # Generate bubble IDs
+        user_bubble_id = str(uuid_lib.uuid4())
+        assistant_bubble_id = str(uuid_lib.uuid4())
+        
+        # Create and validate user message bubble
+        user_bubble = create_bubble_data(user_bubble_id, 1, request.prompt)
+        if not validate_bubble_structure(user_bubble):
+            raise ValueError("Invalid user bubble structure")
+        
+        # Save user message
+        save_message_to_db(conn, chat_id, user_bubble_id, user_bubble)
+        
+        # Call cursor-agent for AI response
+        result = run_cursor_agent(
+            chat_id=chat_id,
+            prompt=request.prompt,
+            model=request.model,
+            output_format=request.output_format,
+            timeout=90
+        )
+        
+        if not result["success"]:
+            # Rollback on cursor-agent failure
+            conn.rollback()
+            conn.close()
+            raise HTTPException(
+                status_code=500,
+                detail=f"cursor-agent failed: {result['stderr']}"
+            )
+        
+        # Parse AI response
+        ai_response_text = result["stdout"].strip()
+        
+        # Create and validate AI response bubble
+        assistant_bubble = create_bubble_data(assistant_bubble_id, 2, ai_response_text)
+        if not validate_bubble_structure(assistant_bubble):
+            conn.rollback()
+            conn.close()
+            raise ValueError("Invalid assistant bubble structure")
+        
+        # Save AI response
+        save_message_to_db(conn, chat_id, assistant_bubble_id, assistant_bubble)
+        
+        # Update chat metadata with both messages
+        update_chat_metadata(conn, chat_id, [
+            (user_bubble_id, 1),
+            (assistant_bubble_id, 2)
+        ])
+        
+        # Commit transaction
+        conn.commit()
+        
+        # Build response
+        response_obj = {
+            "status": "success",
+            "chat_id": chat_id,
+            "prompt": request.prompt,
+            "model": request.model or "default",
+            "output_format": request.output_format,
+            "response": ai_response_text,
+            "user_bubble_id": user_bubble_id,
+            "assistant_bubble_id": assistant_bubble_id,
+            "metadata": {
+                "command": result["command"],
+                "returncode": result["returncode"],
+                "stderr": result["stderr"] if result["stderr"] else None
+            }
+        }
+        
+        return response_obj
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"cursor-agent execution failed: {result['stderr']}"
+            detail=f"Error sending message: {str(e)}"
         )
-    
-    # Parse response based on format
-    response_data = result["stdout"]
-    
-    if request.output_format == "json":
-        try:
-            response_data = json.loads(result["stdout"])
-        except json.JSONDecodeError:
-            # Return as text if JSON parsing fails
-            pass
-    elif request.output_format == "stream-json":
-        # Parse each line as JSON
-        lines = []
-        for line in result["stdout"].strip().split('\n'):
-            if line.strip():
-                try:
-                    lines.append(json.loads(line))
-                except json.JSONDecodeError:
-                    lines.append({"error": "Invalid JSON", "raw": line})
-        response_data = lines
-    
-    # Build response with optional context
-    response_obj = {
-        "status": "success",
-        "chat_id": chat_id,
-        "prompt": request.prompt,
-        "model": request.model or "default",
-        "output_format": request.output_format,
-        "response": response_data,
-        "metadata": {
-            "command": result["command"],
-            "returncode": result["returncode"],
-            "stderr": result["stderr"] if result["stderr"] else None
-        }
-    }
-    
-    # Add context if requested
-    if context:
-        response_obj["context"] = context
-    
-    return response_obj
+    finally:
+        conn.close()
 
 @app.post("/agent/create-chat")
 def create_agent_chat():

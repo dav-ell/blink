@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Use 127.0.0.1 for iOS simulator, localhost for Android
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  // Use Mac's local network IP for physical iOS devices, 127.0.0.1 for simulator
+  static const String baseUrl = 'http://192.168.1.120:8000';
   
   final http.Client _client;
   
