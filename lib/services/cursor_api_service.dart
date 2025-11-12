@@ -85,11 +85,13 @@ class CursorAPIService {
         final content = data['choices'][0]['message']['content'] as String;
         
         return Message(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
           bubbleId: DateTime.now().millisecondsSinceEpoch.toString(),
+          content: content,
+          role: MessageRole.assistant,
+          timestamp: DateTime.now(),
           type: 2, // assistant
           typeLabel: 'assistant',
-          text: content,
-          createdAt: DateTime.now().toIso8601String(),
           hasToolCall: false,
           hasThinking: false,
           hasCode: content.contains('```'),

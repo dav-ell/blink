@@ -79,6 +79,11 @@ class Message(BaseModel):
     has_thinking: bool = False
     has_code: bool = False
     has_todos: bool = False
+    # Separated content fields
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    thinking_content: Optional[str] = None
+    code_blocks: Optional[List[Dict[str, Any]]] = None
+    todos: Optional[List[Dict[str, Any]]] = None
 
 class AgentPromptRequest(BaseModel):
     prompt: str
@@ -182,6 +187,54 @@ def extract_message_content(bubble: Dict) -> str:
         text_parts.append(f"[{len(todos)} Todo Item(s)]")
     
     return '\n\n'.join(text_parts) if text_parts else '[No content]'
+
+def extract_tool_calls(bubble: Dict) -> Optional[List[Dict[str, Any]]]:
+    """Extract tool calls from a bubble as structured data"""
+    if not bubble.get('toolFormerData'):
+        return None
+    
+    tool_data = bubble['toolFormerData']
+    
+    # Skip error tool calls that don't have a name
+    if 'name' not in tool_data:
+        if tool_data.get('additionalData', {}).get('status') == 'error':
+            return None
+        return [{"name": "unknown", "description": "incomplete data"}]
+    
+    tool_name = tool_data['name']
+    raw_args = tool_data.get('rawArgs', '')
+    
+    try:
+        args = json.loads(raw_args) if raw_args else {}
+        tool_call = {
+            "name": tool_name,
+            "explanation": args.get('explanation', ''),
+            "command": args.get('command', ''),
+            "arguments": args
+        }
+        return [tool_call]
+    except:
+        return [{"name": tool_name, "explanation": "", "arguments": {}}]
+
+def extract_thinking(bubble: Dict) -> Optional[str]:
+    """Extract thinking/reasoning content from a bubble"""
+    if not bubble.get('thinking'):
+        return None
+    
+    thinking = bubble['thinking']
+    if isinstance(thinking, dict):
+        return thinking.get('text', str(thinking))
+    return str(thinking)
+
+def extract_separated_content(bubble: Dict) -> Dict[str, Any]:
+    """Extract content separated by type"""
+    return {
+        "text": bubble.get('text', ''),
+        "tool_calls": extract_tool_calls(bubble),
+        "thinking": extract_thinking(bubble),
+        "code_blocks": bubble.get('codeBlocks'),
+        "todos": bubble.get('todos')
+    }
 
 def create_bubble_data(bubble_id: str, message_type: int, text: str) -> Dict[str, Any]:
     """Create a minimal bubble data structure matching Cursor's format"""
@@ -519,11 +572,20 @@ def get_chat_messages(
                 # Extract bubble ID from key
                 bubble_id = key.split(':')[-1]
                 
-                # Extract content
+                # Extract content - now separated by type
                 if include_content:
-                    text = extract_message_content(bubble)
+                    separated = extract_separated_content(bubble)
+                    text = separated['text']
+                    tool_calls = separated['tool_calls']
+                    thinking_content = separated['thinking']
+                    code_blocks = separated['code_blocks']
+                    todos = separated['todos']
                 else:
                     text = bubble.get('text', '[Content not included]')
+                    tool_calls = None
+                    thinking_content = None
+                    code_blocks = None
+                    todos = None
                 
                 message = {
                     "bubble_id": bubble_id,
@@ -535,6 +597,10 @@ def get_chat_messages(
                     "has_thinking": bool(bubble.get('thinking')),
                     "has_code": bool(bubble.get('codeBlocks')),
                     "has_todos": bool(bubble.get('todos')),
+                    "tool_calls": tool_calls,
+                    "thinking_content": thinking_content,
+                    "code_blocks": code_blocks,
+                    "todos": todos,
                 }
                 
                 messages.append(message)

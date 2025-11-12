@@ -3,6 +3,9 @@ import 'package:intl/intl.dart';
 import '../models/message.dart';
 import '../utils/theme.dart';
 import 'content_type_badge.dart';
+import 'tool_call_box.dart';
+import 'thinking_box.dart';
+import 'expandable_content.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
@@ -30,7 +33,18 @@ class MessageBubble extends StatelessWidget {
           crossAxisAlignment:
               isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            // Content type badges
+            // Tool call boxes (shown before message bubble)
+            if (message.toolCalls != null && message.toolCalls!.isNotEmpty)
+              ...message.toolCalls!.map((toolCall) => ToolCallBox(
+                    toolCall: toolCall,
+                  )),
+
+            // Thinking/reasoning box (shown before message bubble)
+            if (message.thinkingContent != null &&
+                message.thinkingContent!.isNotEmpty)
+              ThinkingBox(content: message.thinkingContent!),
+
+            // Content type badges (if using old format)
             if (_hasContentTypes())
               Padding(
                 padding: const EdgeInsets.only(bottom: AppTheme.spacingXSmall),
@@ -41,99 +55,96 @@ class MessageBubble extends StatelessWidget {
                 ),
               ),
 
-            // Message bubble
-            Container(
-              padding: const EdgeInsets.all(AppTheme.spacingMedium),
-              decoration: BoxDecoration(
-                gradient: isUser
-                    ? const LinearGradient(
-                        colors: [AppTheme.userMessageBg, AppTheme.primaryLight],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : AppTheme.assistantGradient,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(AppTheme.radiusLarge),
-                  topRight: const Radius.circular(AppTheme.radiusLarge),
-                  bottomLeft: Radius.circular(
-                      isUser ? AppTheme.radiusLarge : AppTheme.radiusSmall),
-                  bottomRight: Radius.circular(
-                      isUser ? AppTheme.radiusSmall : AppTheme.radiusLarge),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+            // Message bubble (only shown if there's text content)
+            if (message.content.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(AppTheme.spacingMedium),
+                decoration: BoxDecoration(
+                  gradient: isUser
+                      ? const LinearGradient(
+                          colors: [AppTheme.userMessageBg, AppTheme.primaryLight],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : AppTheme.assistantGradient,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(AppTheme.radiusLarge),
+                    topRight: const Radius.circular(AppTheme.radiusLarge),
+                    bottomLeft: Radius.circular(
+                        isUser ? AppTheme.radiusLarge : AppTheme.radiusSmall),
+                    bottomRight: Radius.circular(
+                        isUser ? AppTheme.radiusSmall : AppTheme.radiusLarge),
                   ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Assistant label
-                  if (!isUser)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.smart_toy,
-                            size: 14,
-                            color: AppTheme.textSecondary,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Cursor Assistant',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Assistant label
+                    if (!isUser)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.smart_toy,
+                              size: 14,
                               color: AppTheme.textSecondary,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 4),
+                            Text(
+                              'Cursor Assistant',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+
+                    // Message text with markdown and expandable support
+                    ExpandableContent(
+                      content: message.content,
+                      isUserMessage: isUser,
+                      maxLines: 10,
                     ),
 
-                  // Message text
-                  if (message.content.isNotEmpty)
-                    SelectableText(
-                      message.content,
-                      style: TextStyle(
-                        color: isUser ? Colors.white : AppTheme.textPrimary,
-                        fontSize: 15,
-                        height: 1.4,
-                      ),
-                    ),
-
-                  // Timestamp
-                  const SizedBox(height: AppTheme.spacingSmall),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.access_time,
-                        size: 11,
-                        color: isUser
-                            ? Colors.white.withOpacity(0.7)
-                            : AppTheme.textTertiary,
-                      ),
-                      const SizedBox(width: AppTheme.spacingXSmall),
-                      Text(
-                        _formatTime(message.timestamp),
-                        style: TextStyle(
+                    // Timestamp
+                    const SizedBox(height: AppTheme.spacingSmall),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          size: 11,
                           color: isUser
                               ? Colors.white.withOpacity(0.7)
                               : AppTheme.textTertiary,
-                          fontSize: 11,
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: AppTheme.spacingXSmall),
+                        Text(
+                          _formatTime(message.timestamp),
+                          style: TextStyle(
+                            color: isUser
+                                ? Colors.white.withOpacity(0.7)
+                                : AppTheme.textTertiary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
           ],
         ),
       ),

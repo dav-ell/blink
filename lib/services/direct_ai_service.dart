@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:uuid/uuid.dart';
 import '../models/message.dart';
 
 /// Direct AI Service - Bypasses Cursor entirely
@@ -53,11 +52,13 @@ class DirectAIService {
         final content = data['content'][0]['text'] as String;
         
         return Message(
-          bubbleId: const Uuid().v4(),
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          bubbleId: DateTime.now().millisecondsSinceEpoch.toString(),
+          content: content,
+          role: MessageRole.assistant,
+          timestamp: DateTime.now(),
           type: 2, // assistant
           typeLabel: 'assistant',
-          text: content,
-          createdAt: DateTime.now().toIso8601String(),
           hasToolCall: false,
           hasThinking: false,
           hasCode: _hasCodeBlock(content),
@@ -107,11 +108,13 @@ class DirectAIService {
         final content = data['choices'][0]['message']['content'] as String;
         
         return Message(
-          bubbleId: const Uuid().v4(),
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          bubbleId: DateTime.now().millisecondsSinceEpoch.toString(),
+          content: content,
+          role: MessageRole.assistant,
+          timestamp: DateTime.now(),
           type: 2, // assistant
           typeLabel: 'assistant',
-          text: content,
-          createdAt: DateTime.now().toIso8601String(),
           hasToolCall: false,
           hasThinking: false,
           hasCode: _hasCodeBlock(content),

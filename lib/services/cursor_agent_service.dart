@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/chat.dart';
-import '../models/message.dart';
 
 /// Service for interacting with cursor-agent via REST API
 /// 

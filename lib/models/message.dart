@@ -1,3 +1,7 @@
+import 'tool_call.dart';
+import 'code_block.dart';
+import 'todo_item.dart';
+
 enum MessageRole {
   user,
   assistant,
@@ -15,6 +19,11 @@ class Message {
   final bool hasThinking;
   final bool hasCode;
   final bool hasTodos;
+  // Separated content fields
+  final List<ToolCall>? toolCalls;
+  final String? thinkingContent;
+  final List<CodeBlock>? codeBlocks;
+  final List<TodoItem>? todos;
 
   Message({
     required this.id,
@@ -28,10 +37,39 @@ class Message {
     this.hasThinking = false,
     this.hasCode = false,
     this.hasTodos = false,
+    this.toolCalls,
+    this.thinkingContent,
+    this.codeBlocks,
+    this.todos,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
     final typeLabel = json['type_label'] ?? 'user';
+    
+    // Parse tool calls
+    List<ToolCall>? toolCalls;
+    if (json['tool_calls'] != null && json['tool_calls'] is List) {
+      toolCalls = (json['tool_calls'] as List)
+          .map((tc) => ToolCall.fromJson(tc as Map<String, dynamic>))
+          .toList();
+    }
+    
+    // Parse code blocks
+    List<CodeBlock>? codeBlocks;
+    if (json['code_blocks'] != null && json['code_blocks'] is List) {
+      codeBlocks = (json['code_blocks'] as List)
+          .map((cb) => CodeBlock.fromJson(cb as Map<String, dynamic>))
+          .toList();
+    }
+    
+    // Parse todos
+    List<TodoItem>? todos;
+    if (json['todos'] != null && json['todos'] is List) {
+      todos = (json['todos'] as List)
+          .map((td) => TodoItem.fromJson(td as Map<String, dynamic>))
+          .toList();
+    }
+    
     return Message(
       id: json['bubble_id'] ?? json['id'] ?? '',
       bubbleId: json['bubble_id'] ?? '',
@@ -46,6 +84,10 @@ class Message {
       hasThinking: json['has_thinking'] ?? false,
       hasCode: json['has_code'] ?? false,
       hasTodos: json['has_todos'] ?? false,
+      toolCalls: toolCalls,
+      thinkingContent: json['thinking_content'],
+      codeBlocks: codeBlocks,
+      todos: todos,
     );
   }
 
