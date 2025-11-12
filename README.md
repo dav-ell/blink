@@ -1,347 +1,404 @@
-# Blink - Cursor Chat Manager + Direct API Access 🎉
+# Blink - Mobile Chat Interface for Cursor IDE
 
-A Flutter mobile app for managing and interacting with your Cursor IDE chat sessions, **now with complete direct access to Cursor's API!**
+A Flutter mobile app that lets you view and continue your Cursor IDE chat conversations from iOS/Android devices with full conversation context.
 
----
+## Overview
 
-## 🎉 BREAKTHROUGH: Direct Cursor API Access Achieved!
+Blink provides a mobile interface to your Cursor IDE chats, allowing you to:
+- Browse all your Cursor chat sessions
+- View full conversation history
+- Continue conversations with automatic context preservation
+- Use multiple AI models (GPT-5, Claude, Gemini, etc.)
+- Track async job processing in real-time
 
-**November 11, 2025** - Successfully reverse-engineered Cursor's authentication and gained direct API access!
+## Architecture
 
-### What This Means
-- ✅ **No more IDE bugs** - Direct backend access
-- ✅ **40+ AI models** available (GPT-5, Claude, Gemini, O3, etc.)
-- ✅ **Working authentication** token (valid 53 days)
-- ✅ **Production-ready SDKs** (Python + Dart)
-- ✅ **Complete documentation** of the entire process
+Blink uses a three-layer architecture:
 
-**👉 See [`SUCCESS_REPORT.md`](SUCCESS_REPORT.md) for the full story!**
+```
+┌─────────────────────────────────────┐
+│   Flutter App (iOS/Android)         │
+│   - Chat list & detail screens      │
+│   - Async job polling                │
+│   - Real-time status updates         │
+└──────────────┬──────────────────────┘
+               │ HTTP REST API
+┌──────────────▼──────────────────────┐
+│   Python FastAPI Backend             │
+│   - Reads Cursor's SQLite database   │
+│   - Manages async job queue          │
+│   - Calls cursor-agent CLI           │
+└──────────────┬──────────────────────┘
+               │ CLI Execution
+┌──────────────▼──────────────────────┐
+│   cursor-agent (Official CLI)        │
+│   - Handles AI model routing         │
+│   - Auto-includes conversation via   │
+│     --resume flag                    │
+└─────────────────────────────────────┘
+```
 
----
+### Frontend (Flutter)
 
-## 📚 Quick Links
+**Location:** `lib/`
 
-### 🏆 Achievement Documentation
-- **[SUCCESS_REPORT.md](SUCCESS_REPORT.md)** - The complete victory! 🎉
-- **[FINAL_SUMMARY.md](FINAL_SUMMARY.md)** - Comprehensive summary
-- **[YOUR_CURSOR_TOKEN.md](YOUR_CURSOR_TOKEN.md)** - How to use your token
+**Key Components:**
+- `screens/chat_list_screen.dart` - Browse all chats
+- `screens/chat_detail_screen.dart` - View messages and send prompts
+- `services/cursor_agent_service.dart` - REST API client
+- `services/job_polling_service.dart` - Async job status tracking
+- `models/` - Message, Chat, Job data models
+- `widgets/` - Reusable UI components (message bubbles, processing indicators)
 
-### 🔑 API & Authentication
-- **[CURSOR_AUTH_GUIDE.md](CURSOR_AUTH_GUIDE.md)** - Technical deep dive
-- **[DISCOVERED_API_ENDPOINTS.md](DISCOVERED_API_ENDPOINTS.md)** - API reference
-- **[CURSOR_AUTH_SUMMARY.md](CURSOR_AUTH_SUMMARY.md)** - Quick reference
+**State Management:** Provider pattern for theme and chat state
 
-### 🛠️ Tools & Code
-- **[tools/README.md](tools/README.md)** - Token capture & analysis tools
-- **[examples/README.md](examples/README.md)** - Python & Dart SDKs
+### Backend (Python FastAPI)
 
----
+**Location:** `rest/cursor_chat_api.py`
 
-## 🚀 Quick Start with Direct API
+**Capabilities:**
+- Direct SQLite access to Cursor's database (`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`)
+- Async job queue for non-blocking cursor-agent calls
+- Full CRUD operations on chat messages
+- Job status tracking and polling endpoints
 
-### Immediate Test (Your token is already ready!)
+**Key Features:**
+- In-memory job storage with automatic cleanup (1 hour retention)
+- Database transaction management for atomic message writes
+- Concurrent cursor-agent execution support
 
+### Cursor Agent
+
+**Official Cursor CLI tool** - Installed separately
+
+**Key Capability:** The `--resume <chat_id>` flag automatically includes all previous conversation history, eliminating the need for manual history formatting in the backend.
+
+## Features
+
+- ✅ **View All Chats** - Browse your Cursor conversations with metadata
+- ✅ **Full History** - See complete conversation timeline
+- ✅ **Continue Conversations** - Send new messages with automatic context
+- ✅ **Async Processing** - Submit prompts and poll for results (non-blocking)
+- ✅ **Multiple AI Models** - GPT-5, Claude Sonnet 4.5, Opus 4.1, Gemini, and more
+- ✅ **Rich Content Display** - Tool calls, code blocks, thinking blocks, todos
+- ✅ **Real-time Status** - Live updates on message processing status
+- ✅ **Batch Operations** - Fetch multiple chat summaries at once
+
+## Setup
+
+### Prerequisites
+
+- Python 3.8+ (backend)
+- Flutter 3.0+ (frontend)
+- Cursor IDE installed (for database access)
+- cursor-agent CLI
+
+### Backend Setup
+
+1. **Install cursor-agent** (if not already installed):
 ```bash
-# Your token is captured and waiting!
-export CURSOR_AUTH_TOKEN="$(cat tools/.cursor_token)"
-export CURSOR_USER_ID="auth0|user_01JYHJFKXK3H3N8Y7CTR10WVB2"
-
-# Test it now
-curl -X POST https://api2.cursor.sh/aiserver.v1.AiService/AvailableModels \
-  -H "Authorization: Bearer $CURSOR_AUTH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "X-Cursor-User-Id: $CURSOR_USER_ID" \
-  -H "X-Cursor-Client-Version: 2.0.69" \
-  -d '{}'
+curl https://cursor.com/install -fsS | bash
 ```
 
-**Result**: You'll get a 36KB JSON response with 40+ models! ✅
-
----
-
-## ✨ Features
-
-### Flutter App (Blink)
-- View all chat sessions with Cursor IDE
-- See chat history and message details
-- Send new messages to inactive chats
-- Status indicators (active, inactive, completed)
-- Responsive and modern UI
-- **NEW**: Direct Cursor API integration via `CursorAPIService`
-
-### Direct API Access
-- **40+ AI Models**: GPT-5, Claude, Gemini, O3, Grok, DeepSeek, and more
-- **Bypass Cursor IDE**: Make direct backend calls
-- **Build Custom Tools**: Full programmatic access
-- **Automate Workflows**: CI/CD, batch processing, custom UIs
-- **No IDE Bugs**: Direct backend communication
-
----
-
-## 🤖 Available AI Models
-
-Your token gives you access to:
-
-- **Cursor's Own**: `composer-1`, `default`
-- **Claude**: 4.5 Sonnet, 4.1 Opus, 4.5 Haiku (+ thinking variants)
-- **GPT-5**: Multiple variants including Codex, fast, high/low reasoning
-- **Reasoning**: `o3`, `o3-pro` (deep reasoning models)
-- **Google**: `gemini-2.5-pro`, `gemini-2.5-flash`
-- **xAI**: `grok-4`, `grok-code-fast-1` (FREE during promo!)
-- **Others**: DeepSeek, Kimi, and more
-
-**Total**: 40+ models with various capabilities!
-
----
-
-## 📂 Project Structure
-
-```
-blink/
-├── 📱 Flutter App
-│   ├── lib/
-│   │   ├── main.dart
-│   │   ├── models/              # Data models
-│   │   ├── screens/             # UI screens
-│   │   ├── services/
-│   │   │   ├── chat_service.dart         # Local chat data
-│   │   │   ├── api_service.dart          # REST API client
-│   │   │   └── cursor_api_service.dart   # 🆕 Direct Cursor API!
-│   │   └── widgets/             # UI components
-│   └── pubspec.yaml
-│
-├── 🔑 API Documentation (START HERE!)
-│   ├── SUCCESS_REPORT.md              # 🎉 The victory story!
-│   ├── FINAL_SUMMARY.md              # Complete investigation summary
-│   ├── YOUR_CURSOR_TOKEN.md          # How to use your token
-│   ├── CURSOR_AUTH_GUIDE.md          # Technical guide
-│   ├── DISCOVERED_API_ENDPOINTS.md   # API reference
-│   └── CURSOR_AUTH_SUMMARY.md        # Quick reference
-│
-├── 🛠️ tools/
-│   ├── capture_cursor_auth.sh        # Capture auth tokens
-│   ├── extract_cursor_auth.py        # Extract credentials
-│   ├── extract_cursor_api_info.py    # Analyze database
-│   ├── monitor_cursor_traffic.sh     # Network monitoring
-│   ├── .cursor_token                 # 🔐 Your token (git-ignored)
-│   └── README.md
-│
-├── 💻 examples/
-│   ├── cursor_api_python_example.py  # Python SDK
-│   └── README.md
-│
-├── 🌐 rest/
-│   ├── cursor_chat_api.py            # Local database API
-│   └── README.md
-│
-└── README.md (this file)
-```
-
----
-
-## 🎯 Use Cases
-
-### 1. Direct API Calls (No IDE Required!)
-```bash
-curl -X POST https://api2.cursor.sh/aiserver.v1.AiService/AvailableModels \
-  -H "Authorization: Bearer $CURSOR_AUTH_TOKEN" \
-  -d '{}'
-```
-
-### 2. Python Automation
-```python
-from cursor_api import CursorAPI
-
-api = CursorAPI(
-    auth_token=os.getenv('CURSOR_AUTH_TOKEN'),
-    user_id='auth0|user_01JYHJFKXK3H3N8Y7CTR10WVB2'
-)
-response = api.chat("Explain async/await")
-```
-
-### 3. Flutter Integration
-```dart
-final service = CursorAPIService(
-  authToken: yourToken,
-  userId: 'auth0|user_01JYHJFKXK3H3N8Y7CTR10WVB2',
-);
-final message = await service.sendMessage(message: 'Your question');
-```
-
-### 4. Build Custom Tools
-- CLI tools for code review
-- CI/CD integration
-- Batch processing scripts
-- Custom chat interfaces
-- Workflow automation
-
----
-
-## 🔒 Security
-
-### Token Management
-- ✅ Token stored in `.cursor_token` (git-ignored)
-- ✅ Valid until: **January 4, 2026** (53 days)
-- ✅ Never commit tokens to git
-- ✅ Use environment variables
-- ✅ Re-capture process documented in `tools/`
-
-### Best Practices
-- Store in environment variables or secure storage
-- Rotate when expired
-- Monitor usage for anomalies
-- Never share publicly
-
----
-
-## 🧪 Testing Your API Access
-
-```bash
-# Quick test
-cd tools
-./test_token.sh
-
-# Or manual test
-curl -X POST https://api2.cursor.sh/aiserver.v1.AiService/AvailableModels \
-  -H "Authorization: Bearer $(cat tools/.cursor_token)" \
-  -H "Content-Type: application/json" \
-  -H "X-Cursor-User-Id: auth0|user_01JYHJFKXK3H3N8Y7CTR10WVB2" \
-  -H "X-Cursor-Client-Version: 2.0.69" \
-  -d '{}'
-```
-
-**Expected**: 36KB JSON with model list ✅
-
----
-
-## 📖 Getting Started
-
-### Option 1: Use Direct API (Immediate)
-
-1. Your token is already captured in `tools/.cursor_token`
-2. Set environment variables:
-   ```bash
-   export CURSOR_AUTH_TOKEN="$(cat tools/.cursor_token)"
-   export CURSOR_USER_ID="auth0|user_01JYHJFKXK3H3N8Y7CTR10WVB2"
-   ```
-3. Run examples:
-   ```bash
-   cd examples
-   python3 cursor_api_python_example.py
-   ```
-
-### Option 2: Run Flutter App
-
-1. Install dependencies:
-   ```bash
-   flutter pub get
-   ```
-
-2. Run the app:
-   ```bash
-   flutter run
-   ```
-
-3. Integrate `CursorAPIService` from `lib/services/cursor_api_service.dart`
-
-### Option 3: Use REST API (Local Database)
-
+2. **Install Python dependencies**:
 ```bash
 cd rest
 pip install -r requirements_api.txt
-python3 cursor_chat_api.py
-# Access at http://localhost:8000
 ```
 
----
-
-## 🔄 When Token Expires (Jan 4, 2026)
-
+3. **Start the API server**:
 ```bash
-cd tools
-./capture_cursor_auth.sh
-# Follow interactive prompts to capture new token
+./start_api.sh
 ```
 
-The process is fully documented and repeatable!
+The server will start on `http://localhost:8000` with API documentation at `http://localhost:8000/docs`
 
----
+### Frontend Setup
 
-## 📊 Achievement Stats
+1. **Install Flutter dependencies**:
+```bash
+flutter pub get
+```
 
-- ✅ **Token captured**: November 11, 2025
-- ✅ **Token validated**: Working perfectly
-- ✅ **API endpoints discovered**: 12+
-- ✅ **AI models available**: 40+
-- ✅ **Tools created**: 5 scripts
-- ✅ **SDKs**: Python + Dart
-- ✅ **Documentation**: 8 comprehensive guides
-- ✅ **Success rate**: 100%
+2. **Configure API endpoint**:
 
----
+Edit `lib/services/cursor_agent_service.dart` and update the `baseUrl`:
+```dart
+// For iOS Simulator
+final String baseUrl = 'http://127.0.0.1:8000';
 
-## 🎓 What We Learned
+// For physical iOS device (use your Mac's IP)
+final String baseUrl = 'http://192.168.1.120:8000';
+```
 
-### Technical Achievements
-- Reverse-engineered Cursor's OAuth/Auth0 authentication
-- Captured live HTTPS traffic using mitmproxy
-- Extracted and validated JWT session tokens
-- Discovered gRPC-over-HTTP API architecture
-- Mapped 12+ API endpoints
-- Verified access to 40+ AI models
-- Created production-ready SDKs
+3. **Run the app**:
+```bash
+# iOS Simulator
+flutter run -d iPhone
 
-### Documentation
-- Complete authentication guide
-- API endpoint reference
-- Security best practices
-- Token re-capture process
-- Working code examples
+# Physical device
+flutter run
+```
 
----
+## How It Works
 
-## 🤝 Contributing
+### Conversation Flow
 
-This project successfully achieved its goal of reverse-engineering Cursor's API. Contributions welcome for:
-- Additional endpoint discovery
-- Enhanced SDK features
-- More code examples
-- UI improvements
-- Documentation updates
+When you continue a conversation in Blink:
 
----
+1. **Frontend** - User selects a chat and types a message
+2. **API Call** - App calls `POST /chats/{chat_id}/agent-prompt-async`
+3. **Job Creation** - Backend creates an async job and returns `job_id`
+4. **User Message** - Backend writes user message to Cursor database
+5. **Cursor Agent** - Backend executes `cursor-agent --resume {chat_id} "prompt"`
+6. **Auto History** - cursor-agent automatically loads conversation history
+7. **AI Response** - Backend writes AI response to database
+8. **Polling** - App polls `GET /jobs/{job_id}` for status updates
+9. **Completion** - When status is "completed", app displays the response
 
-## 🎉 The Original Goal
+### Key Insight: The `--resume` Flag
 
-> "I'm having issues getting my cursor queries to work in very specific circumstances. I suspect there was corruption in my download potentially, or else a bug in the binary. Please investigate how cursor makes requests to the backend..."
+The cursor-agent's `--resume` flag handles all history automatically. The backend simply provides the chat ID, and cursor-agent loads all previous messages as context. This eliminates complex history management code.
 
-### Status: ✅ **MISSION ACCOMPLISHED**
+### Async Job System
 
-You now have:
-- ✅ Complete understanding of Cursor's backend requests
-- ✅ Working authentication credentials
-- ✅ Direct API access (bypassing IDE completely)
-- ✅ Production-ready code to build custom tools
-- ✅ Full documentation of the entire process
+Blink uses an async job pattern for better UX:
 
-**You can now sidestep any Cursor IDE bugs by using the API directly!** 🚀
+- **Submit** - Prompt submitted, job ID returned immediately
+- **Pending** - Job queued for processing
+- **Processing** - cursor-agent running
+- **Completed** - Response ready
+- **Failed** - Error occurred (with details)
 
----
+The frontend polls every 2 seconds during processing, showing elapsed time and status.
 
-## 📜 License
+## API Endpoints
+
+### Chat Operations
+- `GET /chats` - List all chats with metadata
+- `GET /chats/{id}` - Get full chat with all messages
+- `GET /chats/{id}/summary` - Get chat preview with recent messages
+- `GET /chats/{id}/metadata` - Get chat metadata only
+- `POST /chats/batch-info` - Get info for multiple chats at once
+
+### Conversation
+- `POST /chats/{id}/agent-prompt-async` - Submit prompt (async, returns job_id)
+- `POST /chats/{id}/agent-prompt` - Submit prompt (sync, blocks until complete)
+- `POST /agent/create-chat` - Create new chat conversation
+
+### Job Management
+- `GET /jobs/{job_id}` - Get full job details
+- `GET /jobs/{job_id}/status` - Quick status check
+- `GET /chats/{id}/jobs` - List all jobs for a chat
+- `DELETE /jobs/{job_id}` - Cancel pending/processing job
+
+### System
+- `GET /health` - Health check with database stats
+- `GET /agent/models` - List available AI models
+
+**Full API Documentation:** `http://localhost:8000/docs` (interactive Swagger UI)
+
+## Project Structure
+
+```
+blink/
+├── lib/                          # Flutter frontend
+│   ├── main.dart                # App entry point
+│   ├── models/                  # Data models
+│   │   ├── chat.dart           # Chat metadata
+│   │   ├── message.dart        # Message with status
+│   │   ├── job.dart            # Async job tracking
+│   │   ├── code_block.dart     # Code display
+│   │   ├── tool_call.dart      # Tool call data
+│   │   └── todo_item.dart      # Todo items
+│   ├── screens/                 # UI screens
+│   │   ├── chat_list_screen.dart    # Browse chats
+│   │   └── chat_detail_screen.dart  # Chat view
+│   ├── services/                # Business logic
+│   │   ├── cursor_agent_service.dart    # API client
+│   │   ├── job_polling_service.dart     # Job status polling
+│   │   └── api_service.dart             # Low-level HTTP
+│   ├── widgets/                 # Reusable components
+│   │   ├── message_bubble.dart          # Message display
+│   │   ├── processing_indicator.dart    # Status animation
+│   │   └── ...
+│   ├── providers/               # State management
+│   │   └── theme_provider.dart
+│   └── utils/
+│       └── theme.dart          # App theming
+│
+├── rest/                        # Python backend
+│   ├── cursor_chat_api.py      # FastAPI server (main)
+│   ├── requirements_api.txt    # Python dependencies
+│   ├── start_api.sh           # Server startup script
+│   ├── conftest.py            # Test configuration
+│   ├── test_*.py              # Test suites
+│   └── README.md              # Backend documentation
+│
+├── pubspec.yaml                # Flutter dependencies
+└── README.md                   # This file
+```
+
+## Configuration
+
+### Backend Configuration
+
+**Database Path** (macOS default):
+```python
+DB_PATH = '~/Library/Application Support/Cursor/User/globalStorage/state.vscdb'
+```
+
+**Server Settings** in `cursor_chat_api.py`:
+- Host: `0.0.0.0` (all interfaces)
+- Port: `8000`
+- Job retention: 1 hour for completed jobs
+- Timeout: 120 seconds for cursor-agent calls
+
+### Available AI Models
+
+The backend supports all cursor-agent models:
+- `composer-1`, `auto` (Cursor's models)
+- `sonnet-4.5`, `sonnet-4.5-thinking` (Claude)
+- `gpt-5`, `gpt-5-codex`, `gpt-5-codex-high` (OpenAI)
+- `opus-4.1` (Claude)
+- `grok`, `grok-4` (xAI)
+- `gemini-2.5-pro`, `gemini-2.5-flash` (Google)
+
+## Development
+
+### Running Tests
+
+**Backend Tests:**
+```bash
+cd rest
+pytest                           # All tests
+pytest test_cursor_agent.py      # Cursor agent integration
+pytest test_api.py              # API endpoints
+```
+
+**Frontend:**
+```bash
+flutter test
+```
+
+### Development Mode
+
+**Backend with auto-reload:**
+```bash
+cd rest
+uvicorn cursor_chat_api:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Frontend with hot reload:**
+```bash
+flutter run
+# Press 'r' to hot reload, 'R' to hot restart
+```
+
+## Troubleshooting
+
+### Backend Issues
+
+**Database not found:**
+- Ensure Cursor IDE is installed
+- Check database path in `cursor_chat_api.py`
+- Verify path: `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
+
+**cursor-agent not found:**
+```bash
+# Install cursor-agent
+curl https://cursor.com/install -fsS | bash
+
+# Verify installation
+cursor-agent --version
+
+# Check path (should be ~/.local/bin/cursor-agent)
+which cursor-agent
+```
+
+**Authentication errors:**
+```bash
+# Login to Cursor
+cursor-agent login
+```
+
+### Frontend Issues
+
+**Cannot connect to API:**
+- Verify backend is running: `curl http://localhost:8000/health`
+- Check firewall settings
+- For physical devices, ensure Mac and device are on same network
+- Update IP address in `cursor_agent_service.dart`
+
+**Build errors:**
+```bash
+flutter clean
+flutter pub get
+flutter run
+```
+
+## Architecture Decisions
+
+### Why Async Jobs?
+
+Cursor-agent calls can take 5-30 seconds. Async jobs provide:
+- **Non-blocking UI** - User can navigate while waiting
+- **Better UX** - Progress indicators and elapsed time
+- **Concurrent processing** - Multiple jobs can run simultaneously
+- **Error recovery** - Jobs can be retried or cancelled
+
+### Why Direct Database Access?
+
+Reading/writing Cursor's SQLite database directly:
+- **Instant sync** - Changes appear in Cursor IDE immediately
+- **No API dependency** - Works offline
+- **Full access** - All chat metadata and content
+- **Performance** - No network overhead for reads
+
+### Why cursor-agent CLI?
+
+- **Official tool** - Maintained by Cursor team
+- **Model routing** - Handles all AI model complexity
+- **Authentication** - Uses Cursor's existing auth
+- **History magic** - `--resume` flag handles context automatically
+
+## Requirements
+
+- **Backend:**
+  - Python 3.8+
+  - FastAPI, uvicorn, sqlite3
+  - cursor-agent CLI
+  - macOS (for default database path)
+
+- **Frontend:**
+  - Flutter 3.0+
+  - Dart 3.0+
+  - iOS 12+ / Android 6+
+
+- **System:**
+  - Cursor IDE installed
+  - Network access between frontend and backend
+
+## License
 
 MIT
 
+## Contributing
+
+Contributions welcome! Areas for improvement:
+- Streaming support (SSE for real-time responses)
+- Message editing and deletion
+- Chat archiving/organization
+- Search functionality
+- Export conversations
+- Multi-user support
+
+## Support
+
+- **Backend API Docs:** `http://localhost:8000/docs`
+- **Backend README:** `rest/README.md`
+- **Issues:** GitHub issues for bug reports
+
 ---
 
-## 🌟 Credits
-
-**Investigation Completed**: November 11, 2025  
-**Authentication Reverse-Engineered**: ✅  
-**API Access Achieved**: ✅  
-**Documentation**: Comprehensive  
-**Status**: **MISSION ACCOMPLISHED** 🎉
-
----
-
-**Start with [`SUCCESS_REPORT.md`](SUCCESS_REPORT.md) to see the complete story!**
+**Built with Flutter, FastAPI, and cursor-agent**
