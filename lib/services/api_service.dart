@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+/// @deprecated Use ChatRepository instead for new code
+/// This service is kept for backwards compatibility during migration
+@Deprecated('Use ChatRepository instead. Will be removed in a future version.')
 class ApiService {
   // Use Mac's local network IP for physical iOS devices, 127.0.0.1 for simulator
   static const String baseUrl = 'http://192.168.1.120:8000';
@@ -61,6 +64,24 @@ class ApiService {
       }
     } catch (e) {
       throw ApiException('Error fetching chats: $e');
+    }
+  }
+
+  // Create a new chat
+  Future<Map<String, dynamic>> createChat() async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/agent/create-chat'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw ApiException('Failed to create chat: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw ApiException('Error creating chat: $e');
     }
   }
 

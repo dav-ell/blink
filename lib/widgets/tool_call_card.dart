@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/tool_call.dart';
 import '../utils/theme.dart';
@@ -64,7 +65,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
                       borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
                     ),
                     child: const Icon(
-                      Icons.build_circle,
+                      CupertinoIcons.wrench_fill,
                       size: 20,
                       color: AppTheme.toolCallColor,
                     ),
@@ -98,8 +99,8 @@ class _ToolCallCardState extends State<ToolCallCard> {
                   if (hasDetails)
                     Icon(
                       _isExpanded
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
+                          ? CupertinoIcons.chevron_up
+                          : CupertinoIcons.chevron_down,
                       color: AppTheme.toolCallColor,
                     ),
                 ],

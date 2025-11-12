@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_syntax_view/flutter_syntax_view.dart';
@@ -68,7 +69,7 @@ class _CodeBlockViewerState extends State<CodeBlockViewer> {
             child: Row(
               children: [
                 Icon(
-                  Icons.code,
+                  CupertinoIcons.chevron_left_slash_chevron_right,
                   size: 16,
                   color: AppTheme.codeColor,
                 ),
@@ -119,7 +120,7 @@ class _CodeBlockViewerState extends State<CodeBlockViewer> {
                     ),
                   ),
                 IconButton(
-                  icon: const Icon(Icons.copy, size: 16),
+                  icon: const Icon(CupertinoIcons.doc_on_doc, size: 16),
                   color: Colors.white.withOpacity(0.7),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),

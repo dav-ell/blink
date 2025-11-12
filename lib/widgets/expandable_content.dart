@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../utils/theme.dart';
@@ -165,7 +166,7 @@ class _ExpandableContentState extends State<ExpandableContent> {
                 ),
                 const SizedBox(width: 4),
                 Icon(
-                  _isExpanded ? Icons.expand_less : Icons.expand_more,
+                  _isExpanded ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
                   size: 16,
                   color: widget.isUserMessage 
                       ? Colors.white.withOpacity(0.8)

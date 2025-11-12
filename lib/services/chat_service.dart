@@ -1,25 +1,41 @@
 import '../models/chat.dart';
-import 'api_service.dart';
+import '../core/constants.dart';
+import '../repositories/chat_repository.dart';
+import 'cache_service.dart';
 
+/// Service for chat business logic
+/// 
+/// This service provides high-level chat operations with caching,
+/// filtering, and search capabilities. It uses ChatRepository for
+/// data access and CacheService for caching.
 class ChatService {
-  final ApiService _apiService;
-  
-  // Cache for performance
-  final Map<String, Chat> _chatCache = {};
-  final Map<String, DateTime> _cacheTimestamps = {};
-  static const Duration _cacheExpiry = Duration(minutes: 5);
+  final ChatRepository _repository;
+  final CacheService<String, Chat> _chatCache;
+  final CacheService<String, List<Chat>> _listCache;
 
-  ChatService({ApiService? apiService})
-      : _apiService = apiService ?? ApiService();
+  ChatService({
+    ChatRepository? repository,
+  })  : _repository = repository ?? ChatRepository(),
+        _chatCache = CacheService(expiry: AppConstants.cacheExpiry),
+        _listCache = CacheService(expiry: AppConstants.cacheExpiry);
 
   // Check if API is available
   Future<bool> checkConnection() async {
-    try {
-      await _apiService.healthCheck();
-      return true;
-    } catch (e) {
-      return false;
-    }
+    final result = await _repository.checkHealth();
+    return result.isSuccess;
+  }
+
+  // Create a new chat
+  Future<String> createNewChat() async {
+    final result = await _repository.createChat();
+    return result.when(
+      success: (chatId) {
+        // Clear list cache to force refresh
+        _listCache.clear();
+        return chatId;
+      },
+      failure: (error) => throw Exception(error),
+    );
   }
 
   // Fetch all chats with caching
@@ -28,55 +44,50 @@ class ChatService {
     String sortBy = 'last_updated',
     bool forceRefresh = false,
   }) async {
-    try {
-      final response = await _apiService.fetchChats(
-        includeArchived: includeArchived,
-        sortBy: sortBy,
-      );
-
-      final chats = (response['chats'] as List)
-          .map((chatJson) => Chat.fromJson(chatJson))
-          .toList();
-
-      // Update cache
-      for (final chat in chats) {
-        _chatCache[chat.id] = chat;
-        _cacheTimestamps[chat.id] = DateTime.now();
-      }
-
-      return chats;
-    } catch (e) {
-      throw Exception('Failed to fetch chats: $e');
+    final cacheKey = 'chats_${includeArchived}_$sortBy';
+    
+    // Return cached if valid and not forcing refresh
+    if (!forceRefresh) {
+      final cached = _listCache.get(cacheKey);
+      if (cached != null) return cached;
     }
+    
+    final result = await _repository.fetchChats(
+      includeArchived: includeArchived,
+      sortBy: sortBy,
+    );
+
+    return result.when(
+      success: (chats) {
+        // Update caches
+        _listCache.set(cacheKey, chats);
+        for (final chat in chats) {
+          _chatCache.set(chat.id, chat);
+        }
+        return chats;
+      },
+      failure: (error) => throw Exception(error),
+    );
   }
 
   // Fetch a specific chat with messages
   Future<Chat> fetchChat(String chatId, {bool forceRefresh = false}) async {
     // Check cache first
-    if (!forceRefresh && _isCacheValid(chatId)) {
-      return _chatCache[chatId]!;
+    if (!forceRefresh) {
+      final cached = _chatCache.get(chatId);
+      if (cached != null) return cached;
     }
 
-    try {
-      final response = await _apiService.fetchChatMessages(
-        chatId,
-        includeMetadata: true,
-      );
+    final result = await _repository.fetchChat(chatId);
 
-      final chat = Chat.fromJson({
-        ...response['metadata'] ?? {},
-        'chat_id': chatId,
-        'messages': response['messages'] ?? [],
-      });
-
-      // Update cache
-      _chatCache[chatId] = chat;
-      _cacheTimestamps[chatId] = DateTime.now();
-
-      return chat;
-    } catch (e) {
-      throw Exception('Failed to fetch chat: $e');
-    }
+    return result.when(
+      success: (chat) {
+        // Update cache
+        _chatCache.set(chatId, chat);
+        return chat;
+      },
+      failure: (error) => throw Exception(error),
+    );
   }
 
   // Search chats by text
@@ -129,20 +140,12 @@ class ChatService {
   // Clear cache
   void clearCache() {
     _chatCache.clear();
-    _cacheTimestamps.clear();
-  }
-
-  // Check if cache is valid
-  bool _isCacheValid(String chatId) {
-    if (!_chatCache.containsKey(chatId)) return false;
-    
-    final timestamp = _cacheTimestamps[chatId];
-    if (timestamp == null) return false;
-    
-    return DateTime.now().difference(timestamp) < _cacheExpiry;
+    _listCache.clear();
   }
 
   void dispose() {
-    _apiService.dispose();
+    _chatCache.dispose();
+    _listCache.dispose();
+    _repository.dispose();
   }
 }

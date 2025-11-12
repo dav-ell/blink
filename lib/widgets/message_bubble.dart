@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/message.dart';
@@ -107,7 +108,7 @@ class MessageBubble extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              Icons.smart_toy,
+                              CupertinoIcons.sparkles,
                               size: 14,
                               color: AppTheme.textSecondary,
                             ),
@@ -150,7 +151,7 @@ class MessageBubble extends StatelessWidget {
                             Row(
                               children: [
                                 Icon(
-                                  Icons.error_outline,
+                                  CupertinoIcons.exclamationmark_circle,
                                   size: 14,
                                   color: Colors.red,
                                 ),
@@ -183,7 +184,7 @@ class MessageBubble extends StatelessWidget {
                                     mainAxisSize: MainAxisSize.min,
                                     children: const [
                                       Icon(
-                                        Icons.refresh,
+                                        CupertinoIcons.arrow_clockwise,
                                         size: 12,
                                         color: Colors.white,
                                       ),
@@ -268,15 +269,15 @@ class MessageBubble extends StatelessWidget {
   IconData _getStatusIcon() {
     switch (message.status) {
       case MessageStatus.pending:
-        return Icons.schedule;
+        return CupertinoIcons.clock;
       case MessageStatus.sending:
-        return Icons.upload_rounded;
+        return CupertinoIcons.arrow_up_circle;
       case MessageStatus.processing:
-        return Icons.hourglass_bottom;
+        return CupertinoIcons.hourglass;
       case MessageStatus.completed:
-        return Icons.access_time;
+        return CupertinoIcons.time;
       case MessageStatus.failed:
-        return Icons.error_outline;
+        return CupertinoIcons.exclamationmark_circle;
     }
   }
 

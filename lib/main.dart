@@ -6,13 +6,21 @@ import 'package:provider/provider.dart';
 import 'screens/chat_list_screen.dart';
 import 'utils/theme.dart';
 import 'providers/theme_provider.dart';
+import 'providers/chat_provider.dart';
+import 'core/service_locator.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Setup dependency injection
+  await setupServiceLocator();
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => getIt<ThemeProvider>()),
+        ChangeNotifierProvider(create: (_) => getIt<ChatProvider>()),
+      ],
       child: const BlinkApp(),
     ),
   );

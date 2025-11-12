@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../utils/theme.dart';
 
@@ -57,32 +58,32 @@ class ContentTypeBadge extends StatelessWidget {
     switch (type.toLowerCase()) {
       case 'code':
         return _BadgeConfig(
-          icon: Icons.code,
+          icon: CupertinoIcons.chevron_left_slash_chevron_right,
           label: 'CODE',
           color: AppTheme.codeColor,
         );
       case 'todo':
         return _BadgeConfig(
-          icon: Icons.check_circle_outline,
+          icon: CupertinoIcons.check_mark_circled,
           label: 'TODO',
           color: AppTheme.todoColor,
         );
       case 'tool':
       case 'tool_call':
         return _BadgeConfig(
-          icon: Icons.build_circle,
+          icon: CupertinoIcons.wrench_fill,
           label: 'TOOL',
           color: AppTheme.toolCallColor,
         );
       case 'thinking':
         return _BadgeConfig(
-          icon: Icons.psychology,
+          icon: CupertinoIcons.lightbulb,
           label: 'THINKING',
           color: AppTheme.thinkingColor,
         );
       default:
         return _BadgeConfig(
-          icon: Icons.help_outline,
+          icon: CupertinoIcons.question_circle,
           label: type.toUpperCase(),
           color: AppTheme.textSecondary,
         );

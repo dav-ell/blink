@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/tool_call.dart';
 import '../utils/theme.dart';
@@ -109,7 +110,7 @@ class _ToolCallBoxState extends State<ToolCallBox> {
                 Row(
                   children: [
                     Icon(
-                      Icons.build_circle,
+                      CupertinoIcons.wrench_fill,
                       size: 16,
                       color: AppTheme.toolCallColor,
                     ),
@@ -151,7 +152,7 @@ class _ToolCallBoxState extends State<ToolCallBox> {
                     ),
                     const SizedBox(width: 4),
                     Icon(
-                      _isExpanded ? Icons.expand_less : Icons.expand_more,
+                      _isExpanded ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
                       size: 16,
                       color: AppTheme.toolCallColor,
                     ),

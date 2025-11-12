@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/todo_item.dart';
 import '../utils/theme.dart';
@@ -66,19 +67,19 @@ class TodoItemWidget extends StatelessWidget {
 
     switch (todo.status) {
       case TodoStatus.completed:
-        icon = Icons.check_circle;
+        icon = CupertinoIcons.check_mark_circled_solid;
         color = AppTheme.activeStatus;
         break;
       case TodoStatus.inProgress:
-        icon = Icons.sync;
+        icon = CupertinoIcons.arrow_2_circlepath;
         color = AppTheme.todoColor;
         break;
       case TodoStatus.cancelled:
-        icon = Icons.cancel;
+        icon = CupertinoIcons.xmark_circle_fill;
         color = AppTheme.archivedStatus;
         break;
       case TodoStatus.pending:
-        icon = Icons.radio_button_unchecked;
+        icon = CupertinoIcons.circle;
         color = AppTheme.textTertiary;
         break;
     }

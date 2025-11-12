@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../utils/theme.dart';
 
@@ -60,7 +61,7 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
                               BorderRadius.circular(AppTheme.radiusSmall),
                         ),
                         child: const Icon(
-                          Icons.psychology,
+                          CupertinoIcons.lightbulb,
                           size: 16,
                           color: AppTheme.thinkingColor,
                         ),
@@ -79,8 +80,8 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
                       if (shouldTruncate)
                         Icon(
                           _isExpanded
-                              ? Icons.keyboard_arrow_up
-                              : Icons.keyboard_arrow_down,
+                              ? CupertinoIcons.chevron_up
+                              : CupertinoIcons.chevron_down,
                           size: 20,
                           color: AppTheme.thinkingColor,
                         ),
