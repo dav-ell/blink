@@ -24,52 +24,23 @@ python3 cursor_chat_api.py
 
 ## Database Schema
 
-### Tables
-**cursorDiskKV**:
-```sql
-Key patterns:
-- composerData:{uuid}        # Chat metadata
-- bubbleId:{composer}:{uuid} # Individual messages
-```
+**For complete database schema and structure details, see the [cursor-db skill](../cursor-db/SKILL.md).**
 
-**ItemTable**:
-- Key: `workbench.panel.aichat.view.aichat.chatdata`
-- Contains active chat panel state
+### Quick Reference
 
-### Data Structure
+**Tables:**
+- `cursorDiskKV` - Main key-value store
+- `ItemTable` - Active panel state
 
-**Composer (Chat) JSON**:
-```python
-{
-    "composerId": "uuid",
-    "name": "Chat title",
-    "createdAt": 1731348502000,  # Unix epoch ms
-    "lastUpdatedAt": 1731349142000,
-    "isArchived": false,
-    "isDraft": false,
-    "totalLinesAdded": 86,
-    "totalLinesRemoved": 1,
-    "contextUsagePercent": 11.22,
-    "fullConversationHeadersOnly": [
-        {"bubbleId": "uuid", "type": 1}
-    ]
-}
-```
+**Key Patterns:**
+- `composerData:{uuid}` - Chat metadata
+- `bubbleId:{composer}:{uuid}` - Individual messages
 
-**Bubble (Message) JSON**:
-```python
-{
-    "_v": 10,
-    "type": 1,  # 1=user, 2=assistant
-    "bubbleId": "uuid",
-    "text": "Message content",
-    "createdAt": "2025-11-11T17:55:02.297Z",
-    "toolFormerData": {},    # Tool calls
-    "thinking": {},          # Reasoning
-    "codeBlocks": [],        # Code snippets
-    "todos": []              # Todo items
-}
-```
+**Important:** When writing to the database, you must use the complete 69+ field bubble structure for Cursor IDE compatibility. See cursor-db skill for:
+- Complete composer and bubble schemas
+- Required fields and versions
+- IDE compatibility requirements
+- Validation and best practices
 
 ## Adding a New Endpoint
 
