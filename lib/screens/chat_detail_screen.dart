@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/chat.dart';
 import '../services/chat_service.dart';
+import '../services/cursor_agent_service.dart';
 import '../widgets/message_bubble.dart';
 import '../utils/theme.dart';
 
@@ -21,13 +22,18 @@ class ChatDetailScreen extends StatefulWidget {
 
 class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _messageController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   late Chat _chat;
+  late CursorAgentService _agentService;
   bool _isLoading = false;
+  bool _isSending = false;
 
   @override
   void initState() {
     super.initState();
     _chat = widget.chat;
+    _agentService = CursorAgentService();
     _loadFullChat();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
@@ -35,6 +41,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _messageController.dispose();
+    _focusNode.dispose();
+    _agentService.dispose();
     super.dispose();
   }
 
@@ -77,6 +86,58 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
+    }
+  }
+
+  Future<void> _sendMessage() async {
+    // Validate input
+    final message = _messageController.text.trim();
+    if (message.isEmpty || _isSending) {
+      return;
+    }
+
+    // Dismiss keyboard
+    _focusNode.unfocus();
+
+    setState(() => _isSending = true);
+
+    try {
+      // Send message via cursor-agent
+      await _agentService.continueConversation(
+        _chat.id,
+        message,
+        showContext: false,
+      );
+
+      // Clear input on success
+      _messageController.clear();
+
+      // Reload chat to show new messages
+      await _loadFullChat();
+
+      // Scroll to bottom to show latest message
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    } catch (e) {
+      // Show error dialog
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('Error'),
+            content: Text('Failed to send message: $e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSending = false);
+      }
     }
   }
 
@@ -275,6 +336,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       ],
                     ),
             ),
+
+            // Message input
+            _buildMessageInput(),
           ],
         ),
       ),
@@ -445,6 +509,100 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             style: TextStyle(
               fontSize: 14,
               color: textColor.withOpacity(0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageInput() {
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    final backgroundColor = isDark ? AppTheme.surfaceDark : AppTheme.surface;
+    final borderColor = (isDark ? Colors.white : Colors.black).withOpacity(0.1);
+    final canSend = _messageController.text.trim().isNotEmpty && !_isSending;
+
+    return Container(
+      padding: EdgeInsets.only(
+        left: AppTheme.spacingMedium,
+        right: AppTheme.spacingMedium,
+        top: AppTheme.spacingSmall,
+        bottom: AppTheme.spacingSmall + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        border: Border(
+          top: BorderSide(
+            color: borderColor,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: Container(
+              constraints: const BoxConstraints(
+                maxHeight: 120,
+              ),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? AppTheme.surfaceLightDark
+                    : AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+              ),
+              child: CupertinoTextField(
+                controller: _messageController,
+                focusNode: _focusNode,
+                placeholder: 'Type a message...',
+                placeholderStyle: TextStyle(
+                  color: isDark
+                      ? AppTheme.textTertiaryDark
+                      : AppTheme.textTertiary,
+                ),
+                style: TextStyle(
+                  color: isDark
+                      ? AppTheme.textPrimaryDark
+                      : AppTheme.textPrimary,
+                  fontSize: 16,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacingMedium,
+                  vertical: AppTheme.spacingSmall,
+                ),
+                decoration: const BoxDecoration(),
+                maxLines: null,
+                textInputAction: TextInputAction.newline,
+                enabled: !_isSending,
+                onChanged: (_) => setState(() {}), // Rebuild to update send button
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacingSmall),
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: canSend ? _sendMessage : null,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: canSend
+                    ? (isDark ? AppTheme.primaryLight : AppTheme.primary)
+                    : (isDark
+                        ? AppTheme.textTertiaryDark
+                        : AppTheme.textTertiary),
+                shape: BoxShape.circle,
+              ),
+              child: _isSending
+                  ? const CupertinoActivityIndicator(
+                      color: Colors.white,
+                    )
+                  : const Icon(
+                      CupertinoIcons.arrow_up,
+                      color: Colors.white,
+                      size: 20,
+                    ),
             ),
           ),
         ],

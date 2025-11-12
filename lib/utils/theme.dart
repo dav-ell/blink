@@ -415,26 +415,36 @@ class AppTheme {
     textTheme: CupertinoTextThemeData(
       primaryColor: textPrimary,
       textStyle: TextStyle(
+        inherit: false,
         fontSize: 17,
         color: textPrimary,
         fontFamily: '.SF Pro Text',
+        decoration: TextDecoration.none,
       ),
       actionTextStyle: TextStyle(
+        inherit: false,
         fontSize: 17,
         color: primary,
         fontFamily: '.SF Pro Text',
+        decoration: TextDecoration.none,
       ),
       navTitleTextStyle: TextStyle(
+        inherit: false,
         fontSize: 17,
         fontWeight: FontWeight.w600,
         color: textPrimary,
         fontFamily: '.SF Pro Text',
+        letterSpacing: -0.4,
+        decoration: TextDecoration.none,
       ),
       navLargeTitleTextStyle: TextStyle(
+        inherit: false,
         fontSize: 34,
         fontWeight: FontWeight.bold,
         color: textPrimary,
         fontFamily: '.SF Pro Display',
+        letterSpacing: -0.4,
+        decoration: TextDecoration.none,
       ),
     ),
   );
@@ -448,26 +458,36 @@ class AppTheme {
     textTheme: CupertinoTextThemeData(
       primaryColor: textPrimaryDark,
       textStyle: TextStyle(
+        inherit: false,
         fontSize: 17,
         color: textPrimaryDark,
         fontFamily: '.SF Pro Text',
+        decoration: TextDecoration.none,
       ),
       actionTextStyle: TextStyle(
+        inherit: false,
         fontSize: 17,
         color: primaryLight,
         fontFamily: '.SF Pro Text',
+        decoration: TextDecoration.none,
       ),
       navTitleTextStyle: TextStyle(
+        inherit: false,
         fontSize: 17,
         fontWeight: FontWeight.w600,
         color: textPrimaryDark,
         fontFamily: '.SF Pro Text',
+        letterSpacing: -0.4,
+        decoration: TextDecoration.none,
       ),
       navLargeTitleTextStyle: TextStyle(
+        inherit: false,
         fontSize: 34,
         fontWeight: FontWeight.bold,
         color: textPrimaryDark,
         fontFamily: '.SF Pro Display',
+        letterSpacing: -0.4,
+        decoration: TextDecoration.none,
       ),
     ),
   );

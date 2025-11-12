@@ -1,0 +1,50 @@
+---
+description: Python environment management guidelines using uv and venv
+---
+
+# Python Environment Management
+
+## Quick Setup
+
+```bash
+cd /Users/davell/Documents/github/blink/rest
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+## AI Assistant Rules
+
+1. **Always use `uv pip` instead of `pip`**
+   - ✅ `uv pip install package-name`
+   - ❌ `pip install package-name`
+
+2. **Use venv Python in scripts**:
+   ```bash
+   if [ -f ".venv/bin/python3" ]; then
+       PYTHON=".venv/bin/python3"
+   else
+       PYTHON="python3"
+   fi
+   $PYTHON script.py
+   ```
+
+3. **Working directory**: Python code lives in `/Users/davell/Documents/github/blink/rest/`
+
+## Common Commands
+
+```bash
+# Setup
+uv venv                                # Create venv
+source .venv/bin/activate              # Activate
+uv pip install package-name            # Install packages
+
+# Testing
+.venv/bin/python3 -m pytest           # Run tests
+```
+
+## Key Dependencies
+- `fastapi` - REST API framework
+- `uvicorn` - ASGI server
+- `pytest` - Testing
+- `requests` - HTTP client

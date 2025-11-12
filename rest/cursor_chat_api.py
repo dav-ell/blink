@@ -18,6 +18,8 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 import uvicorn
 import os
+import subprocess
+import uuid as uuid_lib
 
 # Database path - adjust if needed
 DB_PATH = os.path.expanduser('~/Library/Application Support/Cursor/User/globalStorage/state.vscdb')
@@ -77,6 +79,24 @@ class Message(BaseModel):
     has_thinking: bool = False
     has_code: bool = False
     has_todos: bool = False
+
+class AgentPromptRequest(BaseModel):
+    prompt: str
+    include_history: bool = True
+    max_history_messages: Optional[int] = 20
+    model: Optional[str] = None
+    output_format: str = "text"
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "prompt": "Please help me understand this code",
+                "include_history": True,
+                "max_history_messages": 10,
+                "model": "gpt-5",
+                "output_format": "text"
+            }
+        }
 
 # ============================================================================
 # Helper Functions
@@ -159,16 +179,31 @@ def root():
     """API information and available endpoints"""
     return {
         "name": "Cursor Chat API",
-        "version": "1.0.0",
-        "description": "REST API for Cursor chat database with direct SQLite queries",
+        "version": "2.1.0",
+        "description": "REST API for Cursor chat database with cursor-agent integration",
         "database": DB_PATH,
+        "cursor_agent": {
+            "installed": os.path.exists(CURSOR_AGENT_PATH),
+            "path": CURSOR_AGENT_PATH
+        },
         "endpoints": {
             "GET /": "API information",
             "GET /health": "Health check",
             "GET /chats": "List all chats with metadata",
             "GET /chats/{chat_id}": "Get all messages for a specific chat",
             "GET /chats/{chat_id}/metadata": "Get metadata for a specific chat",
-            "POST /chats/{chat_id}/messages": "Send a message to a chat (DANGEROUS - disabled by default)"
+            "GET /chats/{chat_id}/summary": "Get chat summary optimized for UI (NEW v2.1)",
+            "POST /chats/{chat_id}/messages": "Send a message to a chat (DANGEROUS - disabled by default)",
+            "POST /chats/{chat_id}/agent-prompt": "Send prompt to cursor-agent with chat history",
+            "POST /chats/batch-info": "Get info for multiple chats at once (NEW v2.1)",
+            "POST /agent/create-chat": "Create new cursor-agent chat",
+            "GET /agent/models": "List available AI models"
+        },
+        "features": {
+            "chat_continuation": "Continue existing Cursor conversations seamlessly",
+            "context_preview": "Get recent messages before continuing",
+            "batch_operations": "Fetch multiple chat summaries at once",
+            "history_management": "Automatic history via cursor-agent --resume"
         },
         "documentation": "http://localhost:8000/docs"
     }
@@ -536,6 +571,473 @@ def send_message(
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"Error writing to database: {str(e)}")
+    finally:
+        conn.close()
+
+# ============================================================================
+# Cursor-Agent Integration
+# ============================================================================
+
+CURSOR_AGENT_PATH = os.path.expanduser("~/.local/bin/cursor-agent")
+AVAILABLE_MODELS = [
+    "composer-1", "auto", "sonnet-4.5", "sonnet-4.5-thinking",
+    "gpt-5", "gpt-5-codex", "gpt-5-codex-high", "opus-4.1", "grok"
+]
+
+def run_cursor_agent(
+    chat_id: str,
+    prompt: str,
+    model: Optional[str] = None,
+    output_format: str = "text",
+    timeout: int = 60
+) -> Dict[str, Any]:
+    """
+    Execute cursor-agent CLI with chat history support
+    
+    Args:
+        chat_id: Cursor chat ID to resume (provides history context)
+        prompt: User prompt/question
+        model: AI model to use (optional)
+        output_format: Output format (text, json, stream-json)
+        timeout: Command timeout in seconds
+        
+    Returns:
+        Dict with stdout, stderr, returncode, success
+    """
+    try:
+        # Build command
+        cmd = [CURSOR_AGENT_PATH, "--print", "--force"]
+        
+        # Add model if specified
+        if model:
+            if model not in AVAILABLE_MODELS:
+                raise ValueError(f"Invalid model '{model}'. Available: {', '.join(AVAILABLE_MODELS)}")
+            cmd.extend(["--model", model])
+        
+        # Add output format
+        cmd.extend(["--output-format", output_format])
+        
+        # Add resume with chat ID (this provides history)
+        cmd.extend(["--resume", chat_id])
+        
+        # Add prompt
+        cmd.append(prompt)
+        
+        # Execute command
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        
+        return {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+            "success": result.returncode == 0,
+            "command": ' '.join(cmd)
+        }
+        
+    except subprocess.TimeoutExpired:
+        return {
+            "stdout": "",
+            "stderr": f"Command timed out after {timeout} seconds",
+            "returncode": -1,
+            "success": False,
+            "command": ' '.join(cmd) if 'cmd' in locals() else "unknown"
+        }
+    except Exception as e:
+        return {
+            "stdout": "",
+            "stderr": str(e),
+            "returncode": -1,
+            "success": False,
+            "command": ' '.join(cmd) if 'cmd' in locals() else "unknown"
+        }
+
+@app.post("/chats/{chat_id}/agent-prompt")
+def send_agent_prompt(
+    chat_id: str,
+    request: AgentPromptRequest,
+    show_context: bool = Query(False, description="Include recent messages in response for context preview")
+):
+    """
+    Send a prompt to cursor-agent with existing chat history
+    
+    This endpoint uses cursor-agent CLI with the --resume flag to automatically
+    include all previous messages from the chat as context. The AI response is
+    generated using the full conversation history.
+    
+    **Key Features:**
+    - Maintains full conversation context via --resume
+    - Supports multiple AI models (gpt-5, sonnet-4.5, opus-4.1, etc.)
+    - Multiple output formats (text, json, stream-json)
+    - Automatic history management
+    - Optional context preview (show_context=true)
+    
+    **Usage:**
+    ```
+    POST /chats/{chat_id}/agent-prompt?show_context=true
+    {
+        "prompt": "What did we discuss about authentication?",
+        "include_history": true,
+        "max_history_messages": 20,
+        "model": "gpt-5",
+        "output_format": "text"
+    }
+    ```
+    
+    **Note:** The chat_id must be a valid Cursor chat ID (can be obtained from
+    GET /chats or can be a newly created chat from cursor-agent create-chat).
+    """
+    # Verify cursor-agent is installed
+    if not os.path.exists(CURSOR_AGENT_PATH):
+        raise HTTPException(
+            status_code=503,
+            detail=f"cursor-agent not found at {CURSOR_AGENT_PATH}. Please install cursor-agent CLI."
+        )
+    
+    # Verify chat exists and optionally get context
+    chat_metadata = None
+    context = None
+    
+    if request.include_history or show_context:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Check if chat exists in database
+            cursor.execute("""
+                SELECT value 
+                FROM cursorDiskKV 
+                WHERE key = ?
+            """, (f'composerData:{chat_id}',))
+            
+            row = cursor.fetchone()
+            if not row:
+                # Chat doesn't exist in database - might be a new cursor-agent chat
+                # Continue anyway, cursor-agent will handle it
+                pass
+            else:
+                chat_metadata = json.loads(row[0])
+                
+                # If show_context requested, fetch recent messages
+                if show_context:
+                    cursor.execute("""
+                        SELECT key, value FROM cursorDiskKV 
+                        WHERE key LIKE ? 
+                        ORDER BY key DESC LIMIT ?
+                    """, (f'bubbleId:{chat_id}:%', request.max_history_messages or 5))
+                    
+                    messages = []
+                    for key, value in cursor.fetchall():
+                        try:
+                            bubble = json.loads(value)
+                            messages.append({
+                                "role": "user" if bubble.get('type') == 1 else "assistant",
+                                "text": extract_message_content(bubble),
+                                "created_at": bubble.get('createdAt'),
+                                "has_code": bool(bubble.get('codeBlocks')),
+                                "has_thinking": bool(bubble.get('thinking')),
+                                "has_tool_call": bool(bubble.get('toolFormerData'))
+                            })
+                        except (json.JSONDecodeError, KeyError):
+                            continue
+                    
+                    # Reverse to chronological order
+                    messages.reverse()
+                    
+                    context = {
+                        "message_count": len(chat_metadata.get('fullConversationHeadersOnly', [])),
+                        "recent_messages": messages,
+                        "chat_name": chat_metadata.get('name', 'Untitled'),
+                        "last_updated": parse_timestamp(chat_metadata.get('lastUpdatedAt'))
+                    }
+        finally:
+            conn.close()
+    
+    # Execute cursor-agent with resume (provides history automatically)
+    result = run_cursor_agent(
+        chat_id=chat_id,
+        prompt=request.prompt,
+        model=request.model,
+        output_format=request.output_format,
+        timeout=90  # Longer timeout for agent operations
+    )
+    
+    if not result["success"]:
+        raise HTTPException(
+            status_code=500,
+            detail=f"cursor-agent execution failed: {result['stderr']}"
+        )
+    
+    # Parse response based on format
+    response_data = result["stdout"]
+    
+    if request.output_format == "json":
+        try:
+            response_data = json.loads(result["stdout"])
+        except json.JSONDecodeError:
+            # Return as text if JSON parsing fails
+            pass
+    elif request.output_format == "stream-json":
+        # Parse each line as JSON
+        lines = []
+        for line in result["stdout"].strip().split('\n'):
+            if line.strip():
+                try:
+                    lines.append(json.loads(line))
+                except json.JSONDecodeError:
+                    lines.append({"error": "Invalid JSON", "raw": line})
+        response_data = lines
+    
+    # Build response with optional context
+    response_obj = {
+        "status": "success",
+        "chat_id": chat_id,
+        "prompt": request.prompt,
+        "model": request.model or "default",
+        "output_format": request.output_format,
+        "response": response_data,
+        "metadata": {
+            "command": result["command"],
+            "returncode": result["returncode"],
+            "stderr": result["stderr"] if result["stderr"] else None
+        }
+    }
+    
+    # Add context if requested
+    if context:
+        response_obj["context"] = context
+    
+    return response_obj
+
+@app.post("/agent/create-chat")
+def create_agent_chat():
+    """
+    Create a new cursor-agent chat
+    
+    Returns a new chat ID that can be used with /chats/{chat_id}/agent-prompt
+    to build a conversation with full history tracking.
+    
+    **Example:**
+    ```
+    POST /agent/create-chat
+    
+    Response:
+    {
+        "status": "success",
+        "chat_id": "7c1283c9-bc7d-480a-8dc9-1ed382251471"
+    }
+    ```
+    """
+    if not os.path.exists(CURSOR_AGENT_PATH):
+        raise HTTPException(
+            status_code=503,
+            detail=f"cursor-agent not found at {CURSOR_AGENT_PATH}"
+        )
+    
+    try:
+        result = subprocess.run(
+            [CURSOR_AGENT_PATH, "create-chat"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create chat: {result.stderr}"
+            )
+        
+        chat_id = result.stdout.strip()
+        
+        return {
+            "status": "success",
+            "chat_id": chat_id,
+            "message": "Chat created successfully"
+        }
+        
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=500,
+            detail="create-chat command timed out"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating chat: {str(e)}"
+        )
+
+@app.get("/agent/models")
+def list_available_models():
+    """
+    List all available AI models for cursor-agent
+    
+    Returns the list of models that can be used with the --model parameter.
+    """
+    return {
+        "models": AVAILABLE_MODELS,
+        "default": "auto",
+        "recommended": ["gpt-5", "sonnet-4.5", "opus-4.1"]
+    }
+
+@app.get("/chats/{chat_id}/summary")
+def get_chat_summary(
+    chat_id: str,
+    recent_count: int = Query(5, description="Number of recent messages to include")
+):
+    """
+    Get chat summary optimized for continuation UI
+    
+    Returns chat metadata and recent messages in a format optimized for
+    displaying in iOS/Flutter apps before continuing a conversation.
+    
+    **Usage:**
+    ```
+    GET /chats/{chat_id}/summary?recent_count=5
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "chat_id": "...",
+      "name": "Authentication Implementation",
+      "created_at": "...",
+      "message_count": 23,
+      "last_updated": "...",
+      "recent_messages": [...],
+      "can_continue": true
+    }
+    ```
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get chat metadata
+        cursor.execute("""
+            SELECT value 
+            FROM cursorDiskKV 
+            WHERE key = ?
+        """, (f'composerData:{chat_id}',))
+        
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
+        
+        metadata = json.loads(row[0])
+        
+        # Get recent messages
+        cursor.execute("""
+            SELECT key, value FROM cursorDiskKV 
+            WHERE key LIKE ? 
+            ORDER BY key DESC LIMIT ?
+        """, (f'bubbleId:{chat_id}:%', recent_count))
+        
+        messages = []
+        for key, value in cursor.fetchall():
+            try:
+                bubble = json.loads(value)
+                messages.append({
+                    "role": "user" if bubble.get('type') == 1 else "assistant",
+                    "text": extract_message_content(bubble)[:200] + "..." if len(extract_message_content(bubble)) > 200 else extract_message_content(bubble),
+                    "created_at": bubble.get('createdAt'),
+                    "has_code": bool(bubble.get('codeBlocks')),
+                    "has_thinking": bool(bubble.get('thinking')),
+                    "has_tool_call": bool(bubble.get('toolFormerData')),
+                    "has_todos": bool(bubble.get('todos'))
+                })
+            except (json.JSONDecodeError, KeyError):
+                continue
+        
+        # Reverse to chronological order
+        messages.reverse()
+        
+        # Determine if chat can be continued
+        can_continue = True  # All cursor chats can be continued with --resume
+        
+        return {
+            "chat_id": chat_id,
+            "name": metadata.get('name', 'Untitled'),
+            "created_at": parse_timestamp(metadata.get('createdAt')),
+            "last_updated": parse_timestamp(metadata.get('lastUpdatedAt')),
+            "message_count": len(metadata.get('fullConversationHeadersOnly', [])),
+            "recent_messages": messages,
+            "can_continue": can_continue,
+            "has_code": any(m.get('has_code') for m in messages),
+            "has_todos": any(m.get('has_todos') for m in messages),
+            "participants": ["user", "assistant"]
+        }
+        
+    finally:
+        conn.close()
+
+@app.post("/chats/batch-info")
+def get_batch_chat_info(chat_ids: List[str]):
+    """
+    Get information for multiple chats at once
+    
+    Optimized for iOS list views where you need summary info for multiple chats.
+    
+    **Request:**
+    ```json
+    ["chat_id_1", "chat_id_2", "chat_id_3"]
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "chats": [
+        {"chat_id": "...", "name": "...", "message_count": 10},
+        {"chat_id": "...", "name": "...", "message_count": 5}
+      ],
+      "not_found": ["chat_id_that_doesnt_exist"]
+    }
+    ```
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    chats = []
+    not_found = []
+    
+    try:
+        for chat_id in chat_ids:
+            cursor.execute("""
+                SELECT value 
+                FROM cursorDiskKV 
+                WHERE key = ?
+            """, (f'composerData:{chat_id}',))
+            
+            row = cursor.fetchone()
+            if not row:
+                not_found.append(chat_id)
+                continue
+            
+            try:
+                metadata = json.loads(row[0])
+                chats.append({
+                    "chat_id": chat_id,
+                    "name": metadata.get('name', 'Untitled'),
+                    "created_at": parse_timestamp(metadata.get('createdAt')),
+                    "last_updated": parse_timestamp(metadata.get('lastUpdatedAt')),
+                    "message_count": len(metadata.get('fullConversationHeadersOnly', [])),
+                    "is_archived": metadata.get('isArchived', False),
+                    "is_draft": metadata.get('isDraft', False)
+                })
+            except (json.JSONDecodeError, KeyError):
+                not_found.append(chat_id)
+        
+        return {
+            "chats": chats,
+            "not_found": not_found,
+            "total_requested": len(chat_ids),
+            "total_found": len(chats)
+        }
+        
     finally:
         conn.close()
 
