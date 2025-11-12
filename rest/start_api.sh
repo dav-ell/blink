@@ -3,15 +3,29 @@
 
 cd "$(dirname "$0")"
 
+# Load direnv if available
+if command -v direnv &> /dev/null; then
+    eval "$(direnv export bash 2>/dev/null)"
+fi
+
 # Check if venv exists
 if [ ! -d ".venv" ]; then
     echo "Creating virtual environment..."
     uv venv
     echo "Installing dependencies..."
-    uv pip install -r requirements_api.txt
+    uv pip install -r requirements.txt
 fi
 
-# Activate venv and start server
+# Activate venv if not already active
+if [ -z "$VIRTUAL_ENV" ]; then
+    source .venv/bin/activate
+fi
+
+# Start server using new package structure
 echo "Starting Cursor Chat API Server..."
-.venv/bin/python cursor_chat_api.py
+echo "API will be available at http://localhost:8000"
+echo "Documentation at http://localhost:8000/docs"
+echo ""
+
+.venv/bin/python -m cursor_api.main
 

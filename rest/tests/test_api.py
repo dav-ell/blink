@@ -202,7 +202,8 @@ class TestListChats:
         data = response.json()
         
         if len(data['chats']) > 1:
-            timestamps = [chat['last_updated_at'] for chat in data['chats']]
+            # Handle None values safely
+            timestamps = [chat['last_updated_at'] if chat['last_updated_at'] is not None else 0 for chat in data['chats']]
             # Should be in descending order
             assert timestamps == sorted(timestamps, reverse=True)
             
