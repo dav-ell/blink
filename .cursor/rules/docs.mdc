@@ -1,7 +1,6 @@
 ---
-description: Guidelines for documentation creation
+alwaysApply: true
 ---
-
 # Documentation Guidelines
 
 ## Minimize Documentation Files

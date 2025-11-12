@@ -120,11 +120,15 @@ bubbleId:{composer}:{uuid} -- Individual messages
 
 ### Data Structures
 
-**Chat (Composer) JSON**:
+**Chat (Composer) JSON** - Complete Structure:
 ```json
 {
+  "_v": 10,
   "composerId": "uuid",
   "name": "Chat title",
+  "richText": "{\"root\":{\"children\":[...]}}",
+  "hasLoaded": true,
+  "text": "",
   "createdAt": 1731348502000,
   "lastUpdatedAt": 1731349142000,
   "isArchived": false,
@@ -138,24 +142,95 @@ bubbleId:{composer}:{uuid} -- Individual messages
 }
 ```
 
-**Message (Bubble) JSON**:
+**Critical Composer Fields** (required for Cursor IDE):
+- `_v`: 10 (version number)
+- `richText`: Lexical editor state JSON
+- `hasLoaded`: true
+- `text`: "" (empty string)
+
+**Message (Bubble) JSON** - Complete Structure (69+ fields):
 ```json
 {
-  "_v": 10,
+  "_v": 3,
   "type": 1,
   "bubbleId": "uuid",
   "text": "Message content",
   "createdAt": "2025-11-11T17:55:02.297Z",
+  "requestId": "uuid",
+  "checkpointId": "uuid",
+  "richText": "{\"root\":{\"children\":[...]}}",
+  "supportedTools": [1, 41, 7, 38, 8, 9, 11, 12, 15, 18, 19, 25, 27, 43, 46, 47, 29, 30, 32, 34, 35, 39, 40, 42, 44, 45],
+  "tokenCount": {"inputTokens": 0, "outputTokens": 0},
+  "context": {
+    "composers": [], "quotes": [], "selectedCommits": [],
+    "selectedPullRequests": [], "selectedImages": [], "folderSelections": [],
+    "fileSelections": [], "terminalFiles": [], "selections": [],
+    "terminalSelections": [], "selectedDocs": [], "externalLinks": [],
+    "cursorRules": [], "cursorCommands": [], "uiElementSelections": [],
+    "consoleLogs": [], "mentions": []
+  },
+  "isAgentic": true,
+  "unifiedMode": 5,
   "toolFormerData": {},
   "thinking": {},
   "codeBlocks": [],
-  "todos": []
+  "todos": [],
+  "capabilityStatuses": {
+    "mutate-request": [], "start-submit-chat": [], "before-submit-chat": [],
+    "chat-stream-finished": [], "before-apply": [], "after-apply": [],
+    "accept-all-edits": [], "composer-done": [], "process-stream": [],
+    "add-pending-action": []
+  },
+  "approximateLintErrors": [], "lints": [], "codebaseContextChunks": [],
+  "commits": [], "pullRequests": [], "attachedCodeChunks": [],
+  "assistantSuggestedDiffs": [], "gitDiffs": [], "interpreterResults": [],
+  "images": [], "attachedFolders": [], "attachedFoldersNew": [],
+  "toolResults": [], "notepads": [], "capabilities": [],
+  "multiFileLinterErrors": [], "diffHistories": [],
+  "recentLocationsHistory": [], "recentlyViewedFiles": [],
+  "fileDiffTrajectories": [], "docsReferences": [],
+  "webReferences": [], "aiWebSearchResults": [],
+  "attachedFoldersListDirResults": [], "humanChanges": [],
+  "allThinkingBlocks": [], "attachedFileCodeChunksMetadataOnly": [],
+  "capabilityContexts": [], "consoleLogs": [], "contextPieces": [],
+  "cursorRules": [], "deletedFiles": [], "diffsForCompressingFiles": [],
+  "diffsSinceLastApply": [], "documentationSelections": [],
+  "editTrailContexts": [], "externalLinks": [], "knowledgeItems": [],
+  "projectLayouts": [], "relevantFiles": [], "suggestedCodeBlocks": [],
+  "summarizedComposers": [], "uiElementPicked": [],
+  "userResponsesToSuggestedCodeBlocks": [],
+  "existedSubsequentTerminalCommand": false,
+  "existedPreviousTerminalCommand": false,
+  "editToolSupportsSearchAndReplace": true,
+  "isNudge": false, "isPlanExecution": false,
+  "isQuickSearchQuery": false, "isRefunded": false,
+  "skipRendering": false, "useWeb": false
 }
 ```
+
+**Critical Bubble Fields** (required for Cursor IDE to load):
+- `_v`: 3 (bubble version)
+- `requestId`: UUID for request tracking
+- `checkpointId`: UUID for checkpoint
+- `richText`: Lexical editor JSON format
+- `supportedTools`: Array of 26 tool IDs
+- `tokenCount`: Object with inputTokens/outputTokens
+- `context`: Object with 17 selection context keys
+- `isAgentic`: true for user, false for assistant
+- `unifiedMode`: 5 (standard value)
+- `capabilityStatuses`: Dict with 10 capability types
+- All 21+ array fields (can be empty)
+- All 7 boolean flags
+- `modelInfo`: {"modelName": "..."} (assistant only)
 
 **Type Values**:
 - `1` = User message
 - `2` = Assistant message
+
+**Field Count**:
+- Minimal API bubble: 21 fields
+- Complete Cursor bubble: 69+ fields
+- Missing fields cause IDE loading failures
 
 ### Querying the Database
 
@@ -471,10 +546,30 @@ message CompletionResponse {
 
 ### Common Issues
 
+**Chat Created but 404 on First Message**:
+- `cursor-agent create-chat` only generates UUID, doesn't create database entry
+- Entry is created when first message is sent
+- Solution: Auto-create composerData entry if missing when sending message
+- Check: `SELECT * FROM cursorDiskKV WHERE key = 'composerData:{chat_id}'`
+
+**Chat Won't Load in Cursor IDE**:
+- Bubble structure is incomplete (missing required fields)
+- Need all 69+ fields for IDE compatibility
+- Common missing fields: `supportedTools`, `tokenCount`, `context`, `richText`
+- Solution: Use complete bubble structure or repair with `repair_broken_chat.py`
+- Verify: Check field count in database, should be 69+ not 20-30
+
+**Chat Works in API/App but Not in IDE**:
+- API/mobile apps often work with minimal fields
+- Cursor IDE requires complete structure for loading
+- Missing fields cause silent failures (no error logs)
+- Fix: Ensure all 69+ fields are present in bubbles
+
 **404 on Chat Endpoints**:
-- Endpoint exists but requires protobuf encoding
-- JSON payloads are rejected
-- Need gRPC client with protobuf definitions
+- Chat doesn't exist in database (composerData entry missing)
+- Or endpoint exists but requires protobuf encoding
+- JSON payloads may be rejected for protobuf endpoints
+- Check database first: `composerData:{chat_id}` should exist
 
 **Token Expired**:
 - Check expiration in decoded JWT
@@ -510,12 +605,32 @@ curl -X POST https://api2.cursor.sh/aiserver.v1.AiService/AvailableModels \
 # Check database
 sqlite3 ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb ".tables"
 
+# Check if chat exists
+sqlite3 ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb \
+  "SELECT key FROM cursorDiskKV WHERE key = 'composerData:YOUR_CHAT_ID'"
+
+# Count fields in a bubble (should be 69+)
+sqlite3 ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb \
+  "SELECT json_array_length(json_keys(value)) FROM cursorDiskKV WHERE key LIKE 'bubbleId:YOUR_CHAT_ID:%' LIMIT 1"
+
 # Monitor network
 cd ~/Documents/github/blink/tools
 ./monitor_cursor_traffic.sh
 
 # Extract credentials
 python3 extract_cursor_auth.py
+
+# Extract and compare bubble structures
+cd ~/Documents/github/blink/rest/scripts
+python3 extract_bubble_schema.py
+python3 compare_bubble_structures.py
+
+# Test API chat creation
+python3 test_api_chat_creation.py
+
+# Repair broken chat
+python3 repair_broken_chat.py --list
+python3 repair_broken_chat.py YOUR_CHAT_ID
 ```
 
 ## Security Considerations
@@ -542,9 +657,11 @@ python3 extract_cursor_auth.py
 - No risk of corruption
 
 **Write Operations**:
-- Close Cursor first
-- Risk of database corruption
-- Not recommended
+- Close Cursor first to avoid conflicts
+- Risk of database corruption if Cursor is running
+- Must use complete field structure for IDE compatibility
+- Incomplete bubbles (missing fields) will break IDE loading
+- Always validate bubble structure has all 69+ required fields
 
 ### Privacy Mode
 
@@ -577,6 +694,98 @@ If Cursor is in privacy mode:
 - `examples/cursor_api_python_example.py` - Python SDK
 - `lib/services/cursor_api_service.dart` - Flutter SDK
 
+## Cursor-Agent CLI Deep Dive
+
+### Understanding cursor-agent Behavior
+
+**Installation:**
+```bash
+curl https://cursor.com/install -fsS | bash
+```
+
+**Command Types:**
+
+1. **create-chat** - Generates chat ID only
+```bash
+cursor-agent create-chat
+# Returns: uuid (e.g., 3f1a6a8c-58d1-4fbe-81f7-1ad946d9c84e)
+# NOTE: Does NOT create database entry - entry created on first message
+```
+
+2. **Sending Messages** - Uses --resume flag
+```bash
+cursor-agent --print --force --resume <chat_id> "Your prompt"
+# Automatically includes ALL chat history
+# Writes both user and assistant messages to database
+# Creates composerData entry if it doesn't exist
+```
+
+### Critical Discovery: Database Entry Creation
+
+**Important:** `cursor-agent create-chat` ONLY generates a UUID. The actual database entry is created when:
+1. First message is sent via cursor-agent
+2. OR manually created via direct database write
+
+**Implication for REST APIs:**
+- After calling `/agent/create-chat`, the chat doesn't exist in database yet
+- Sending a message to a "created" chat will fail with 404
+- Solution: Auto-create composerData entry on first message if missing
+
+### Complete Bubble Structure Requirements
+
+**Why 69+ fields matter:**
+- Cursor IDE validates bubble structure on load
+- Missing critical fields cause silent loading failures
+- Chat won't appear or won't open in IDE
+- iOS/Flutter apps may work with fewer fields (uses API directly)
+
+**Must-have fields for IDE compatibility:**
+```python
+# Critical complex fields
+"supportedTools": [1, 41, 7, 38, 8, 9, 11, 12, 15, 18, 19, 25, 27, 43, 46, 47, 29, 30, 32, 34, 35, 39, 40, 42, 44, 45]
+"tokenCount": {"inputTokens": 0, "outputTokens": 0}
+"context": {17 keys with empty arrays}
+"richText": "{Lexical editor JSON}"
+"requestId": "uuid"
+"checkpointId": "uuid"
+"capabilityStatuses": {10 capability types}
+
+# Boolean flags
+"isAgentic": true/false
+"unifiedMode": 5
+"editToolSupportsSearchAndReplace": true
+# + 7 more boolean flags
+
+# All array fields (21+)
+"allThinkingBlocks": []
+"supportedTools": [...]
+# + 19 more arrays
+```
+
+### Investigation Tools
+
+**Location:** `rest/scripts/`
+
+1. **extract_bubble_schema.py** - Extract complete schemas from database
+2. **compare_bubble_structures.py** - Compare API vs Cursor structures  
+3. **repair_broken_chat.py** - Fix chats with incomplete structures
+4. **test_api_chat_creation.py** - Test complete workflow
+
+**Usage:**
+```bash
+cd rest/scripts
+
+# Extract current schemas
+python3 extract_bubble_schema.py
+
+# Compare structures
+python3 compare_bubble_structures.py
+
+# Repair broken chat
+python3 repair_broken_chat.py --list
+python3 repair_broken_chat.py <chat_id> --apply
+```
+
 ## Quick Reference
 
 ### Environment Setup
@@ -601,12 +810,33 @@ curl -X POST https://api2.cursor.sh/aiserver.v1.AiService/<EndpointName> \
   -d '{}'
 ```
 
+### Database Write Best Practices
+
+**For Cursor IDE Compatibility:**
+1. Always use complete 69+ field bubble structure
+2. Include all required arrays (even if empty)
+3. Set proper `_v` versions (bubble: 3, composer: 10)
+4. Generate unique `requestId` and `checkpointId`
+5. Include `richText` in Lexical editor format
+6. Set `isAgentic` based on message type
+7. Include `supportedTools` array with standard 26 tools
+8. Add `modelInfo` for assistant messages
+
+**Auto-create Pattern:**
+```python
+# Check if chat exists
+cursor.execute("SELECT value FROM cursorDiskKV WHERE key = ?", (f'composerData:{chat_id}',))
+if not cursor.fetchone():
+    # Create minimal composerData with all required fields
+    # Then proceed with message creation
+```
+
 ### Status Codes
 
 - `200` - Success
 - `401` - Unauthorized (bad token)
 - `403` - Forbidden (expired token)
-- `404` - Not found (or protobuf required)
+- `404` - Not found (or protobuf required, or chat doesn't exist)
 - `429` - Rate limited
 - `503` - Service unavailable
 

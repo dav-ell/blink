@@ -1,7 +1,6 @@
 ---
-description: Python environment management guidelines using uv and venv
+alwaysApply: true
 ---
-
 # Python Environment Management
 
 ## Quick Setup
