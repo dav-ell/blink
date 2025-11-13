@@ -1,6 +1,9 @@
+---
+alwaysApply: false
+---
 # Cursor Internals - Code Examples
 
-**For database operation examples, see the [cursor-db skill](../cursor-db/EXAMPLES.md).**
+**For database operation examples, see the [cursor-db skill](../cursor-db/EXAMPLES.mdc).**
 
 This file contains examples for Cursor authentication and cursor-agent CLI usage.
 
@@ -61,7 +64,7 @@ def cursor_agent_workflow():
     """
     Complete example of cursor-agent workflow.
     
-    For database handling details, see cursor-db skill EXAMPLES.md
+    For database handling details, see cursor-db skill EXAMPLES.mdc
     """
     # Step 1: Generate chat ID
     chat_id = create_chat_with_cursor_agent()
@@ -80,8 +83,7 @@ def cursor_agent_workflow():
 
 ## See Also
 
-- Main skill documentation: [SKILL.md](SKILL.md)
-- **Database operations:** [cursor-db skill](../cursor-db/EXAMPLES.md)
+- Main skill documentation: [SKILL.mdc](SKILL.mdc)
+- **Database operations:** [cursor-db skill](../cursor-db/EXAMPLES.mdc)
 - REST API implementation: `/Users/davell/Documents/github/blink/rest/cursor_chat_api.py`
 - Cursor authentication tools: `/Users/davell/Documents/github/blink/tools/`
-

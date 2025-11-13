@@ -1,0 +1,212 @@
+---
+alwaysApply: false
+---
+# Cursor Database - Code Examples
+
+Complete working code examples for interacting with Cursor's database.
+
+## Complete Bubble Creation (Python)
+
+### Proper Bubble Structure for Cursor IDE Compatibility
+
+```python
+import json
+import uuid
+from datetime import datetime, timezone
+
+def create_complete_bubble(bubble_id: str, message_type: int, text: str) -> dict:
+    """
+    Create a complete bubble structure with all 69+ fields required by Cursor IDE.
+    
+    Args:
+        bubble_id: UUID for the bubble
+        message_type: 1 for user, 2 for assistant
+        text: Message text content
+    
+    Returns:
+        Complete bubble dict ready for database insertion
+    """
+    
+    # Generate unique identifiers
+    request_id = str(uuid.uuid4())
+    checkpoint_id = str(uuid.uuid4())
+    
+    # Create Lexical editor richText structure
+    rich_text = {
+        "root": {
+            "children": [{
+                "children": [{
+                    "detail": 0,
+                    "format": 0,
+                    "mode": "normal",
+                    "style": "",
+                    "text": text,
+                    "type": "text",
+                    "version": 1
+                }],
+                "direction": None,
+                "format": "",
+                "indent": 0,
+                "type": "paragraph",
+                "version": 1
+            }],
+            "direction": None,
+            "format": "",
+            "indent": 0,
+            "type": "root",
+            "version": 1
+        }
+    }
+    
+    bubble = {
+        "_v": 3,
+        "type": message_type,
+        "text": text,
+        "bubbleId": bubble_id,
+        "createdAt": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        
+        # Core arrays (must exist, can be empty)
+        "approximateLintErrors": [],
+        "lints": [],
+        "codebaseContextChunks": [],
+        "commits": [],
+        "pullRequests": [],
+        "attachedCodeChunks": [],
+        "assistantSuggestedDiffs": [],
+        "gitDiffs": [],
+        "interpreterResults": [],
+        "images": [],
+        "attachedFolders": [],
+        "attachedFoldersNew": [],
+        "toolResults": [],
+        "notepads": [],
+        "capabilities": [],
+        "multiFileLinterErrors": [],
+        "diffHistories": [],
+        "recentLocationsHistory": [],
+        "recentlyViewedFiles": [],
+        "fileDiffTrajectories": [],
+        "docsReferences": [],
+        "webReferences": [],
+        "aiWebSearchResults": [],
+        "attachedFoldersListDirResults": [],
+        "humanChanges": [],
+        
+        # Additional arrays required by Cursor
+        "allThinkingBlocks": [],
+        "attachedFileCodeChunksMetadataOnly": [],
+        "capabilityContexts": [],
+        "consoleLogs": [],
+        "contextPieces": [],
+        "cursorRules": [],
+        "deletedFiles": [],
+        "diffsForCompressingFiles": [],
+        "diffsSinceLastApply": [],
+        "documentationSelections": [],
+        "editTrailContexts": [],
+        "externalLinks": [],
+        "knowledgeItems": [],
+        "projectLayouts": [],
+        "relevantFiles": [],
+        "suggestedCodeBlocks": [],
+        "summarizedComposers": [],
+        "todos": [],
+        "codeBlocks": [],
+        "uiElementPicked": [],
+        "userResponsesToSuggestedCodeBlocks": [],
+        
+        # Capability statuses (10 capability types)
+        "capabilityStatuses": {
+            "mutate-request": [],
+            "start-submit-chat": [],
+            "before-submit-chat": [],
+            "chat-stream-finished": [],
+            "before-apply": [],
+            "after-apply": [],
+            "accept-all-edits": [],
+            "composer-done": [],
+            "process-stream": [],
+            "add-pending-action": []
+        },
+        
+        # Boolean flags
+        "isAgentic": message_type == 1,
+        "existedSubsequentTerminalCommand": False,
+        "existedPreviousTerminalCommand": False,
+        "editToolSupportsSearchAndReplace": True,
+        "isNudge": False,
+        "isPlanExecution": False,
+        "isQuickSearchQuery": False,
+        "isRefunded": False,
+        "skipRendering": False,
+        "useWeb": False,
+        
+        # Critical complex fields
+        "supportedTools": [1, 41, 7, 38, 8, 9, 11, 12, 15, 18, 19, 25, 27, 43, 46, 47, 29, 30, 32, 34, 35, 39, 40, 42, 44, 45],
+        "tokenCount": {
+            "inputTokens": 0,
+            "outputTokens": 0
+        },
+        "context": {
+            "composers": [],
+            "quotes": [],
+            "selectedCommits": [],
+            "selectedPullRequests": [],
+            "selectedImages": [],
+            "folderSelections": [],
+            "fileSelections": [],
+            "terminalFiles": [],
+            "selections": [],
+            "terminalSelections": [],
+            "selectedDocs": [],
+            "externalLinks": [],
+            "cursorRules": [],
+            "cursorCommands": [],
+            "uiElementSelections": [],
+            "consoleLogs": [],
+            "mentions": []
+        },
+        
+        # Identifiers
+        "requestId": request_id,
+        "checkpointId": checkpoint_id,
+        
+        # Rich text (must be JSON string, not object)
+        "richText": json.dumps(rich_text),
+        
+        # Unified mode
+        "unifiedMode": 5,
+        
+        # Tool and thinking data
+        "toolFormerData": {},
+        "thinking": {},
+    }
+    
+    # Add model info for assistant messages
+    if message_type == 2:
+        bubble["modelInfo"] = {
+            "modelName": "claude-4.5-sonnet"
+        }
+    
+    return bubble
+
+
+# Usage example
+if __name__ == "__main__":
+    bubble = create_complete_bubble(
+        str(uuid.uuid4()),
+        1,
+        "Hello from API!"
+    )
+    
+    print(f"✓ Created bubble with {len(bubble.keys())} fields")
+    print(f"✓ Has all required fields: {len(bubble.keys()) >= 69}")
+    print(f"✓ Field list: {', '.join(sorted(bubble.keys()))}")
+```
+
+## See Also
+
+- Main skill documentation: [SKILL.mdc](SKILL.mdc)
+- REST API implementation: `/Users/davell/Documents/github/blink/rest/cursor_chat_api.py`
+- Investigation scripts: `/Users/davell/Documents/github/blink/rest/scripts/`
+- cursor-internals skill: `/Users/davell/Documents/github/blink/.cursor/rules/skills/cursor-internals/SKILL.mdc`

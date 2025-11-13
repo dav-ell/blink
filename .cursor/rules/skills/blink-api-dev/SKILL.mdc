@@ -1,3 +1,6 @@
+---
+alwaysApply: false
+---
 # Blink API Development Skill
 
 ## Purpose
@@ -255,4 +258,3 @@ from datetime import datetime
 - 404: Not found
 - 503: Service unavailable (DB error)
 - 500: Internal server error
-

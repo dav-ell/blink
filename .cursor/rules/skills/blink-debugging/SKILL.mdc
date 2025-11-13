@@ -1,3 +1,6 @@
+---
+alwaysApply: false
+---
 # Blink Debugging Skill
 
 ## Purpose
@@ -536,4 +539,3 @@ flutter run --dart-define=USE_PROXY=true
   "cwd": "${workspaceFolder}/rest"
 }
 ```
-

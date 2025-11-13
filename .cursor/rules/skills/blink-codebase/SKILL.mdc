@@ -1,3 +1,6 @@
+---
+alwaysApply: false
+---
 # Blink Codebase Skill
 
 ## Purpose
@@ -278,4 +281,3 @@ flutter pub get
 - FastAPI docs: https://fastapi.tiangolo.com
 - Material Design 3: https://m3.material.io
 - Cursor database structure: See `rest/cursor_chat_api.py` comments
-

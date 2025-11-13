@@ -1,3 +1,6 @@
+---
+alwaysApply: false
+---
 # Cursor Internals Skill
 
 ## Purpose
@@ -103,7 +106,7 @@ AI Providers (Anthropic, OpenAI, etc.)
 
 ## Database
 
-**For complete database documentation, see the [cursor-db skill](../cursor-db/SKILL.md).**
+**For complete database documentation, see the [cursor-db skill](../cursor-db/SKILL.mdc).**
 
 ### Quick Reference
 
@@ -244,63 +247,6 @@ models = api.list_models()
 print(f"Found {len(models['models'])} models")
 ```
 
-### Dart/Flutter Example
-
-```dart
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-
-class CursorAPIClient {
-  final String baseUrl = 'https://api2.cursor.sh';
-  final String authToken;
-  final String userId;
-
-  CursorAPIClient({
-    required this.authToken,
-    required this.userId,
-  });
-
-  Map<String, String> get _headers => {
-    'Authorization': 'Bearer $authToken',
-    'Content-Type': 'application/json',
-    'X-Cursor-User-Id': userId,
-    'X-Cursor-Client-Version': '2.0.69',
-  };
-
-  Future<Map<String, dynamic>> listModels() async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/aiserver.v1.AiService/AvailableModels'),
-      headers: _headers,
-      body: jsonEncode({}),
-    );
-    
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to load models: ${response.statusCode}');
-    }
-  }
-
-  Future<Map<String, dynamic>> checkFeatures() async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/aiserver.v1.AiService/CheckFeaturesStatus'),
-      headers: _headers,
-      body: jsonEncode({}),
-    );
-    return jsonDecode(response.body);
-  }
-}
-
-// Usage
-final api = CursorAPIClient(
-  authToken: yourToken,
-  userId: yourUserId,
-);
-
-final models = await api.listModels();
-print('Found ${models['models'].length} models');
-```
-
 ## Available AI Models
 
 Cursor provides access to 40+ AI models:
@@ -336,170 +282,6 @@ Cursor provides access to 40+ AI models:
 - `grok-code-fast-1` - Free during promo
 - `deepseek-r1`, `deepseek-v3.1`
 - `kimi-k2-instruct`
-
-## Protobuf Discovery
-
-To enable chat functionality, you need protobuf definitions.
-
-### Method 1: Extract from Electron App
-
-```bash
-# Find .proto references
-strings /Applications/Cursor.app/Contents/MacOS/Cursor | grep "\.proto"
-
-# Search for service names
-strings /Applications/Cursor.app/Contents/MacOS/Cursor | grep -i "aiservice\|GetCompletionStream"
-
-# Extract asar archive
-npm install -g asar
-asar extract /Applications/Cursor.app/Contents/Resources/app.asar /tmp/cursor_extracted
-
-# Search extracted files
-cd /tmp/cursor_extracted
-grep -r "GetCompletionStream" . --include="*.js"
-grep -r "message.*Request\|message.*Response" . --include="*.js"
-```
-
-### Method 2: Analyze Binary Traffic
-
-```bash
-cd ~/Documents/github/blink/tools/auth_captures
-
-# Find protobuf requests
-grep -B 5 -A 30 "application/proto" cursor_auth_*.log
-
-# Decode binary payloads
-echo "<hex_payload>" | xxd -r -p | protoc --decode_raw
-```
-
-### Method 3: gRPC Reflection
-
-```bash
-# Try to list services
-grpcurl -H "Authorization: Bearer $CURSOR_AUTH_TOKEN" \
-  api2.cursor.sh:443 list
-
-# If it works, describe the service
-grpcurl -H "Authorization: Bearer $CURSOR_AUTH_TOKEN" \
-  api2.cursor.sh:443 describe aiserver.v1.AiService
-```
-
-### What You're Looking For
-
-Expected protobuf structure:
-
-```protobuf
-syntax = "proto3";
-
-package aiserver.v1;
-
-service AiService {
-  rpc GetCompletionStream(CompletionRequest) returns (stream CompletionResponse);
-}
-
-message CompletionRequest {
-  string prompt = 1;
-  int32 max_tokens = 2;
-  string model = 3;
-  repeated Message messages = 4;
-}
-
-message CompletionResponse {
-  string content = 1;
-  bool done = 2;
-}
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Token Expired**:
-- Check expiration in decoded JWT
-- Re-run capture process
-- Tokens typically last 53-60 days
-
-**SSL Certificate Errors**:
-- mitmproxy cert not trusted
-- Install to System Keychain
-- Run: `tools/capture_cursor_auth.sh` (option 1)
-
-**Connection Refused**:
-- Check API is reachable: `curl https://api2.cursor.sh`
-- Verify token in Authorization header
-- Check User ID format: `auth0|user_*`
-
-### Diagnostic Commands
-
-```bash
-# Test authentication
-curl -X POST https://api2.cursor.sh/aiserver.v1.AiService/AvailableModels \
-  -H "Authorization: Bearer $CURSOR_AUTH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "X-Cursor-User-Id: $CURSOR_USER_ID" \
-  -H "X-Cursor-Client-Version: 2.0.69" \
-  -d '{}'
-
-# Monitor network
-cd ~/Documents/github/blink/tools
-./monitor_cursor_traffic.sh
-
-# Extract credentials
-python3 extract_cursor_auth.py
-```
-
-**For database diagnostics, see the [cursor-db skill](../cursor-db/SKILL.md).**
-
-## Security Considerations
-
-### Token Safety
-
-**Do**:
-- Store tokens in environment variables
-- Use git-ignored files (`.cursor_token`)
-- Rotate tokens when expired
-- Use HTTPS only
-
-**Don't**:
-- Commit tokens to git
-- Share tokens publicly
-- Hardcode in source code
-- Use tokens in client-side JavaScript
-
-### Database Safety
-
-**For database safety guidelines and write operations, see the [cursor-db skill](../cursor-db/SKILL.md).**
-
-### Privacy Mode
-
-If Cursor is in privacy mode:
-- `privacyModeType`: `"NO_TRAINING"`
-- Data not used for training
-- Check in `storage.json`
-
-## Reference Documentation
-
-### In This Repository
-
-- `WORKING_API_REFERENCE.md` - JSON endpoints with examples
-- `CHAT_API_ANALYSIS.md` - Protobuf architecture details
-- `SUCCESS_REPORT.md` - Investigation summary
-- `CURSOR_AUTH_GUIDE.md` - Complete authentication guide
-- `DISCOVERED_API_ENDPOINTS.md` - Full endpoint catalog
-- `YOUR_CURSOR_TOKEN.md` - Token usage guide
-
-### Tools
-
-- `tools/capture_cursor_auth.sh` - Interactive token capture
-- `tools/extract_cursor_auth.py` - Extract IDs from local files
-- `tools/extract_cursor_api_info.py` - Analyze database
-- `tools/monitor_cursor_traffic.sh` - Network monitoring
-- `tools/test_token.sh` - Validate token
-
-### Code Examples
-
-- `examples/cursor_api_python_example.py` - Python SDK
-- `lib/services/cursor_api_service.dart` - Flutter SDK
 
 ## Cursor-Agent CLI Deep Dive
 
@@ -538,7 +320,7 @@ cursor-agent --print --force --resume <chat_id> "Your prompt"
 - Sending a message to a "created" chat will fail with 404
 - Solution: Auto-create composerData entry on first message if missing
 
-**For complete database structure requirements and investigation tools, see the [cursor-db skill](../cursor-db/SKILL.md).**
+**For complete database structure requirements and investigation tools, see the [cursor-db skill](../cursor-db/SKILL.mdc).**
 
 ## Quick Reference
 
@@ -601,4 +383,3 @@ curl -X POST https://api2.cursor.sh/aiserver.v1.AiService/<EndpointName> \
 - **gRPC**: https://grpc.io/
 - **mitmproxy**: https://mitmproxy.org/
 - **Auth0**: https://auth0.com/docs
-

@@ -1,3 +1,6 @@
+---
+alwaysApply: false
+---
 # Blink Flutter UI Development Skill
 
 ## Purpose
@@ -509,4 +512,3 @@ flutter run
 - [ ] Use appropriate text styles
 - [ ] Add hero animations for navigation (optional)
 - [ ] Test on different screen sizes
-
