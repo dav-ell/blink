@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "blink-agent-control": {
+      "command": "/Users/davell/Documents/github/blink/rest/.venv/bin/python3",
+      "args": [
+        "-m",
+        "cursor_api.mcp_server"
+      ],
+      "cwd": "/Users/davell/Documents/github/blink/rest",
+      "env": {
+        "PYTHONPATH": "/Users/davell/Documents/github/blink/rest"
+      }
+    }
+  }
+}
+
