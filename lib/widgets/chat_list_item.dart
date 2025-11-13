@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/chat.dart';
+import '../models/device.dart';
 import '../utils/theme.dart';
 
 class ChatListItem extends StatelessWidget {
@@ -58,10 +59,55 @@ class ChatListItem extends StatelessWidget {
 
             const SizedBox(height: AppTheme.spacingSmall),
 
+            // Remote device info or preview text
+            if (chat.isRemote && chat.remoteInfo != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                margin: const EdgeInsets.only(bottom: AppTheme.spacingSmall),
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemBlue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      CupertinoIcons.device_laptop,
+                      size: 14,
+                      color: CupertinoColors.systemBlue,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        '${chat.remoteInfo!.deviceName}:${chat.remoteInfo!.workingDirectory}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: CupertinoColors.systemBlue,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Preview text
-            if (chat.preview.isNotEmpty)
+            if (chat.preview.isNotEmpty && chat.isLocal)
               Text(
                 chat.preview,
+                style: TextStyle(
+                  fontSize: 15,
+                  color: isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary,
+                  height: 1.4,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              )
+            else if (chat.isRemote && chat.remoteInfo?.lastMessagePreview != null)
+              Text(
+                chat.remoteInfo!.lastMessagePreview!,
                 style: TextStyle(
                   fontSize: 15,
                   color: isDark ? AppTheme.textSecondaryDark : AppTheme.textSecondary,
@@ -103,12 +149,14 @@ class ChatListItem extends StatelessWidget {
               ],
             ),
 
-            // Archive/Draft badges
-            if (chat.isArchived || chat.isDraft)
+            // Archive/Draft/Location badges
+            if (chat.isArchived || chat.isDraft || chat.isRemote)
               Padding(
                 padding: const EdgeInsets.only(top: AppTheme.spacingSmall),
                 child: Row(
                   children: [
+                    if (chat.isRemote)
+                      _buildLocationBadge(isDark),
                     if (chat.isArchived)
                       _buildBadge('Archived', CupertinoIcons.archivebox),
                     if (chat.isDraft)
@@ -200,6 +248,63 @@ class ChatListItem extends StatelessWidget {
               fontSize: 13,
               fontWeight: FontWeight.w500,
               color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationBadge(bool isDark) {
+    if (!chat.isRemote || chat.remoteInfo == null) return const SizedBox.shrink();
+    
+    Color statusColor;
+    switch (chat.remoteInfo!.deviceStatus) {
+      case DeviceStatus.online:
+        statusColor = AppTheme.activeStatus;
+        break;
+      case DeviceStatus.offline:
+        statusColor = AppTheme.archivedStatus;
+        break;
+      case DeviceStatus.unknown:
+        statusColor = CupertinoColors.systemYellow;
+        break;
+    }
+    
+    return Container(
+      margin: const EdgeInsets.only(right: AppTheme.spacingSmall),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTheme.spacingSmall,
+        vertical: AppTheme.spacingXSmall,
+      ),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemBlue.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: statusColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: AppTheme.spacingXSmall),
+          const Icon(
+            CupertinoIcons.cloud,
+            size: 12,
+            color: CupertinoColors.systemBlue,
+          ),
+          const SizedBox(width: 4),
+          const Text(
+            'Remote',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: CupertinoColors.systemBlue,
             ),
           ),
         ],

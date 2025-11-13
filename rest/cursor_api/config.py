@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     job_cleanup_max_age_hours: int = 1
     job_cleanup_interval_minutes: int = 30
     
+    # Device management configuration
+    device_db_path: str = os.path.expanduser("~/.cursor_agent_devices.db")
+    
+    # SSH configuration
+    ssh_timeout: int = 120  # seconds - timeout for SSH commands
+    ssh_connect_timeout: int = 10  # seconds - connection timeout
+    default_cursor_agent_path: str = "~/.local/bin/cursor-agent"
+    
     # CORS configuration
     cors_allow_origins: list[str] = ["*"]
     cors_allow_credentials: bool = True

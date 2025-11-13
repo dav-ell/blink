@@ -1,7 +1,8 @@
 /// Application-wide constants and configuration values
 class AppConstants {
   // API Configuration
-  static const String apiBaseUrl = 'http://192.168.1.120:8000';
+  // Use localhost for desktop, or set to your Mac's IP for mobile devices
+  static const String apiBaseUrl = 'http://localhost:8000';
   static const String cursorApiBaseUrl = 'https://api2.cursor.sh';
   
   // Timeouts

@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Query
 from ..config import settings
 from ..database import get_db_connection
 from ..utils import parse_timestamp, extract_separated_content
+from ..services.device_service import list_remote_chats, get_device
+from ..models.device import ChatLocation
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
@@ -20,89 +22,117 @@ def list_chats(
     offset: int = Query(0, description="Number of chats to skip")
 ):
     """
-    List all chats with metadata (direct SQLite query)
+    List all chats with metadata (local and remote)
 
     Returns chat IDs, names, timestamps, status, and basic statistics.
+    Includes both local chats from Cursor database and remote chats from device database.
     Does NOT return message content - use /chats/{chat_id} for that.
     """
-    # Check if database exists - return empty list if not
-    if not os.path.exists(settings.db_path):
-        return {
-            "total": 0,
-            "returned": 0,
-            "offset": offset,
-            "chats": []
-        }
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    chats = []
     
-    try:
-        # Query all composer data
-        cursor.execute("""
-            SELECT key, value 
-            FROM cursorDiskKV 
-            WHERE key LIKE 'composerData:%'
-        """)
+    # Get local chats
+    if os.path.exists(settings.db_path):
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
-        chats = []
-        for key, value_blob in cursor.fetchall():
-            try:
-                # Parse JSON directly from SQLite
-                data = json.loads(value_blob)
-                
-                # Skip archived if not requested
-                if not include_archived and data.get('isArchived', False):
+        try:
+            # Query all composer data
+            cursor.execute("""
+                SELECT key, value 
+                FROM cursorDiskKV 
+                WHERE key LIKE 'composerData:%'
+            """)
+            
+            for key, value_blob in cursor.fetchall():
+                try:
+                    # Parse JSON directly from SQLite
+                    data = json.loads(value_blob)
+                    
+                    # Skip archived if not requested
+                    if not include_archived and data.get('isArchived', False):
+                        continue
+                    
+                    chat_id = data.get('composerId')
+                    
+                    chat_meta = {
+                        "chat_id": chat_id,
+                        "name": data.get('name', 'Untitled'),
+                        "created_at": data.get('createdAt'),
+                        "created_at_iso": parse_timestamp(data.get('createdAt')),
+                        "last_updated_at": data.get('lastUpdatedAt'),
+                        "last_updated_at_iso": parse_timestamp(data.get('lastUpdatedAt')),
+                        "is_archived": data.get('isArchived', False),
+                        "is_draft": data.get('isDraft', False),
+                        "total_lines_added": data.get('totalLinesAdded', 0),
+                        "total_lines_removed": data.get('totalLinesRemoved', 0),
+                        "subtitle": data.get('subtitle'),
+                        "unified_mode": data.get('unifiedMode'),
+                        "message_count": len(data.get('fullConversationHeadersOnly', [])),
+                        "location": ChatLocation.LOCAL.value
+                    }
+                    
+                    chats.append(chat_meta)
+                except json.JSONDecodeError:
                     continue
-                
-                chat_id = data.get('composerId')
-                
-                chat_meta = {
-                    "chat_id": chat_id,
-                    "name": data.get('name', 'Untitled'),
-                    "created_at": data.get('createdAt'),
-                    "created_at_iso": parse_timestamp(data.get('createdAt')),
-                    "last_updated_at": data.get('lastUpdatedAt'),
-                    "last_updated_at_iso": parse_timestamp(data.get('lastUpdatedAt')),
-                    "is_archived": data.get('isArchived', False),
-                    "is_draft": data.get('isDraft', False),
-                    "total_lines_added": data.get('totalLinesAdded', 0),
-                    "total_lines_removed": data.get('totalLinesRemoved', 0),
-                    "subtitle": data.get('subtitle'),
-                    "unified_mode": data.get('unifiedMode'),
-                    "message_count": len(data.get('fullConversationHeadersOnly', []))
-                }
-                
-                chats.append(chat_meta)
-            except json.JSONDecodeError:
-                continue
-        
-        # Sort chats (handle None values safely)
-        if sort_by == "last_updated":
-            chats.sort(key=lambda x: x['last_updated_at'] if x['last_updated_at'] is not None else 0, reverse=True)
-        elif sort_by == "created":
-            chats.sort(key=lambda x: x['created_at'] if x['created_at'] is not None else 0, reverse=True)
-        elif sort_by == "name":
-            chats.sort(key=lambda x: (x['name'] or 'Untitled').lower())
-        
-        # Apply pagination
-        total_count = len(chats)
-        if limit is not None and limit == 0:
-            chats = []
-        elif limit:
-            chats = chats[offset:offset+limit]
-        else:
-            chats = chats[offset:]
-        
-        return {
-            "total": total_count,
-            "returned": len(chats),
-            "offset": offset,
-            "chats": chats
-        }
-        
-    finally:
-        conn.close()
+        finally:
+            conn.close()
+    
+    # Get remote chats
+    try:
+        remote_chats = list_remote_chats()
+        for remote in remote_chats:
+            device = get_device(remote.device_id)
+            
+            chat_meta = {
+                "chat_id": remote.chat_id,
+                "name": remote.name,
+                "created_at": int(remote.created_at.timestamp() * 1000),
+                "created_at_iso": remote.created_at.isoformat(),
+                "last_updated_at": int(remote.last_updated_at.timestamp() * 1000) if remote.last_updated_at else None,
+                "last_updated_at_iso": remote.last_updated_at.isoformat() if remote.last_updated_at else None,
+                "is_archived": False,
+                "is_draft": False,
+                "total_lines_added": 0,
+                "total_lines_removed": 0,
+                "subtitle": f"{device.name if device else 'Unknown Device'}:{remote.working_directory}",
+                "unified_mode": None,
+                "message_count": remote.message_count,
+                "location": ChatLocation.REMOTE.value,
+                "device_id": remote.device_id,
+                "device_name": device.name if device else "Unknown",
+                "device_status": device.status if device else "unknown",
+                "working_directory": remote.working_directory,
+                "last_message_preview": remote.last_message_preview
+            }
+            
+            chats.append(chat_meta)
+    except Exception as e:
+        # Don't fail if remote chats can't be loaded
+        print(f"Warning: Failed to load remote chats: {e}")
+    
+    # Sort chats (handle None values safely)
+    if sort_by == "last_updated":
+        chats.sort(key=lambda x: x['last_updated_at'] if x['last_updated_at'] is not None else 0, reverse=True)
+    elif sort_by == "created":
+        chats.sort(key=lambda x: x['created_at'] if x['created_at'] is not None else 0, reverse=True)
+    elif sort_by == "name":
+        chats.sort(key=lambda x: (x['name'] or 'Untitled').lower())
+    
+    # Apply pagination
+    total_count = len(chats)
+    if limit is not None and limit == 0:
+        chats = []
+    elif limit:
+        chats = chats[offset:offset+limit]
+    else:
+        chats = chats[offset:]
+    
+    return {
+        "total": total_count,
+        "returned": len(chats),
+        "offset": offset,
+        "chats": chats
+    }
 
 
 @router.get("/{chat_id}/metadata")

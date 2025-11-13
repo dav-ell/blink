@@ -3,10 +3,20 @@ import 'package:provider/provider.dart';
 import '../../utils/theme.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../settings_screen.dart';
 
 /// Header for ChatListScreen with connection status, refresh, and theme toggle
 class ChatListHeader extends StatelessWidget implements ObstructingPreferredSizeWidget {
   const ChatListHeader({super.key});
+
+  void _navigateToSettings(BuildContext context) {
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (context) => const SettingsScreen(),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +75,14 @@ class ChatListHeader extends StatelessWidget implements ObstructingPreferredSize
               themeProvider.isDarkMode
                   ? CupertinoIcons.sun_max
                   : CupertinoIcons.moon,
+              color: isDark ? AppTheme.primaryLight : AppTheme.primary,
+            ),
+          ),
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: () => _navigateToSettings(context),
+            child: Icon(
+              CupertinoIcons.settings,
               color: isDark ? AppTheme.primaryLight : AppTheme.primary,
             ),
           ),

@@ -3,11 +3,12 @@ import 'package:http/http.dart' as http;
 import '../repositories/chat_repository.dart';
 import '../services/chat_service.dart';
 import '../services/cursor_agent_service.dart';
+import '../services/settings_service.dart';
 import '../providers/chat_provider.dart';
 import '../providers/chat_detail_provider.dart';
 import '../providers/job_polling_provider.dart';
 import '../providers/theme_provider.dart';
-import '../core/constants.dart';
+import '../providers/settings_provider.dart';
 
 /// Global service locator instance
 final getIt = GetIt.instance;
@@ -16,13 +17,20 @@ final getIt = GetIt.instance;
 /// 
 /// Call this once at app startup before runApp()
 Future<void> setupServiceLocator() async {
+  // Settings Service (singleton) - load first
+  final settingsService = SettingsService();
+  getIt.registerSingleton<SettingsService>(settingsService);
+  
+  // Get configured API endpoint
+  final apiEndpoint = await settingsService.getApiEndpoint();
+  
   // HTTP Client (singleton)
   getIt.registerLazySingleton<http.Client>(() => http.Client());
   
   // Services (singletons)
   getIt.registerLazySingleton<CursorAgentService>(
     () => CursorAgentService(
-      baseUrl: AppConstants.apiBaseUrl,
+      baseUrl: apiEndpoint,
       client: getIt<http.Client>(),
     ),
   );
@@ -71,6 +79,10 @@ Future<void> setupServiceLocator() async {
   
   getIt.registerFactory<ThemeProvider>(
     () => ThemeProvider(),
+  );
+  
+  getIt.registerFactory<SettingsProvider>(
+    () => SettingsProvider(),
   );
 }
 

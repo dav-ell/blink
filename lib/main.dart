@@ -7,6 +7,7 @@ import 'screens/chat_list_screen.dart';
 import 'utils/theme.dart';
 import 'providers/theme_provider.dart';
 import 'providers/chat_provider.dart';
+import 'providers/settings_provider.dart';
 import 'core/service_locator.dart';
 
 void main() async {
@@ -20,6 +21,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => getIt<ThemeProvider>()),
         ChangeNotifierProvider(create: (_) => getIt<ChatProvider>()),
+        ChangeNotifierProvider(create: (_) => getIt<SettingsProvider>()),
       ],
       child: const BlinkApp(),
     ),

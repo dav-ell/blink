@@ -8,6 +8,7 @@ import '../widgets/filter_sheet.dart';
 import '../utils/theme.dart';
 import '../core/service_locator.dart';
 import 'chat_detail_screen.dart';
+import 'new_chat_screen.dart';
 import 'components/chat_list_header.dart';
 import 'components/chat_list_content.dart';
 import 'components/chat_list_fab.dart';
@@ -74,50 +75,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Future<void> _createNewChat() async {
     final chatProvider = context.read<ChatProvider>();
     
-    try {
-      final chatId = await chatProvider.createNewChat();
+    // Navigate to new chat screen for location selection
+    if (mounted) {
+      await Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (context) => const NewChatScreen(),
+        ),
+      );
       
-      // Navigate to new chat
+      // Refresh after returning
       if (mounted) {
-        await Navigator.push(
-          context,
-          CupertinoPageRoute(
-            builder: (context) => ChangeNotifierProvider(
-              create: (_) => getIt<ChatDetailProvider>(),
-              child: ChatDetailScreen(
-                chat: Chat(
-                  id: chatId,
-                  title: 'New Chat',
-                  status: ChatStatus.active,
-                  createdAt: DateTime.now(),
-                  lastMessageAt: DateTime.now(),
-                  messages: [],
-                ),
-              ),
-            ),
-          ),
-        );
-        
-        // Refresh after returning
-        if (mounted) {
-          chatProvider.loadChats(forceRefresh: true);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        showCupertinoDialog(
-          context: context,
-          builder: (context) => CupertinoAlertDialog(
-            title: const Text('Error'),
-            content: Text('Failed to create chat: $e'),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('OK'),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
+        chatProvider.loadChats(forceRefresh: true);
       }
     }
   }

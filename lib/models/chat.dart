@@ -1,4 +1,5 @@
 import 'message.dart';
+import 'device.dart';
 
 enum ChatStatus {
   active,
@@ -20,6 +21,8 @@ class Chat {
   final String? subtitle;
   final String? unifiedMode;
   final double? contextUsagePercent;
+  final ChatLocation location;
+  final RemoteChatInfo? remoteInfo;
 
   Chat({
     required this.id,
@@ -35,6 +38,8 @@ class Chat {
     this.subtitle,
     this.unifiedMode,
     this.contextUsagePercent,
+    this.location = ChatLocation.local,
+    this.remoteInfo,
   });
 
   String get preview {
@@ -51,6 +56,24 @@ class Chat {
       status = ChatStatus.inactive;
     } else if (json['is_draft'] == true) {
       status = ChatStatus.inactive;
+    }
+
+    // Determine location
+    final location = json['location'] != null
+        ? ChatLocation.fromString(json['location'])
+        : ChatLocation.local;
+
+    // Parse remote info if present
+    RemoteChatInfo? remoteInfo;
+    if (location == ChatLocation.remote && json['device_id'] != null) {
+      remoteInfo = RemoteChatInfo(
+        chatId: json['chat_id'],
+        deviceId: json['device_id'],
+        deviceName: json['device_name'] ?? 'Unknown',
+        deviceStatus: DeviceStatus.fromString(json['device_status'] ?? 'unknown'),
+        workingDirectory: json['working_directory'] ?? '',
+        lastMessagePreview: json['last_message_preview'],
+      );
     }
 
     return Chat(
@@ -77,6 +100,8 @@ class Chat {
       subtitle: json['subtitle'],
       unifiedMode: json['unified_mode'],
       contextUsagePercent: json['context_usage_percent']?.toDouble(),
+      location: location,
+      remoteInfo: remoteInfo,
     );
   }
 
@@ -93,7 +118,17 @@ class Chat {
       'subtitle': subtitle,
       'unified_mode': unifiedMode,
       'context_usage_percent': contextUsagePercent,
+      'location': location.name,
+      if (remoteInfo != null) ...{
+        'device_id': remoteInfo!.deviceId,
+        'device_name': remoteInfo!.deviceName,
+        'device_status': remoteInfo!.deviceStatus.name,
+        'working_directory': remoteInfo!.workingDirectory,
+      },
       'messages': messages.map((m) => m.toJson()).toList(),
     };
   }
+
+  bool get isRemote => location == ChatLocation.remote;
+  bool get isLocal => location == ChatLocation.local;
 }

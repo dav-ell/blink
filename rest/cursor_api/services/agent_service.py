@@ -10,6 +10,8 @@ from ..models.job import JobStatus
 from ..database import get_db_connection, save_message_to_db, update_chat_metadata, ensure_chat_exists
 from ..utils import create_bubble_data, validate_bubble_structure, parse_cursor_agent_output
 from .job_service import get_job, update_job
+from .device_service import get_remote_chat, get_device, update_remote_chat_metadata, update_device_last_seen
+from .ssh_agent_service import execute_remote_cursor_agent
 
 
 # Available AI models for cursor-agent
@@ -110,10 +112,11 @@ def execute_job_in_background(job_id: str):
     
     This function:
     1. Marks job as processing
-    2. Writes user message to database
-    3. Calls cursor-agent
-    4. Writes AI response to database
-    5. Updates job status (completed or failed)
+    2. Checks if chat is local or remote
+    3. Writes user message to database
+    4. Calls cursor-agent (local or via SSH)
+    5. Writes AI response to database
+    6. Updates job status (completed or failed)
     
     Args:
         job_id: Job UUID to execute
@@ -122,6 +125,24 @@ def execute_job_in_background(job_id: str):
     if not job:
         return
     
+    # Check if this is a remote chat
+    remote_chat = get_remote_chat(job.chat_id)
+    
+    if remote_chat:
+        # Execute on remote device
+        _execute_remote_job(job_id, job, remote_chat)
+    else:
+        # Execute locally
+        _execute_local_job(job_id, job)
+
+
+def _execute_local_job(job_id: str, job):
+    """Execute a local cursor-agent job
+    
+    Args:
+        job_id: Job UUID
+        job: Job object
+    """
     try:
         # Mark as processing
         update_job(
@@ -235,5 +256,95 @@ def execute_job_in_background(job_id: str):
             status=JobStatus.FAILED,
             completed_at=datetime.now(timezone.utc),
             error=str(e)
+        )
+
+
+def _execute_remote_job(job_id: str, job, remote_chat):
+    """Execute a remote cursor-agent job via SSH
+    
+    Args:
+        job_id: Job UUID
+        job: Job object
+        remote_chat: RemoteChat object
+    """
+    try:
+        # Mark as processing
+        update_job(
+            job_id,
+            status=JobStatus.PROCESSING,
+            started_at=datetime.now(timezone.utc)
+        )
+        
+        # Get device
+        device = get_device(remote_chat.device_id)
+        if not device:
+            update_job(
+                job_id,
+                status=JobStatus.FAILED,
+                completed_at=datetime.now(timezone.utc),
+                error=f"Device not found: {remote_chat.device_id}"
+            )
+            return
+        
+        # Execute cursor-agent remotely
+        result = execute_remote_cursor_agent(
+            device=device,
+            chat_id=job.chat_id,
+            prompt=job.prompt,
+            working_directory=remote_chat.working_directory,
+            model=job.model,
+            output_format="stream-json"
+        )
+        
+        if not result["success"]:
+            update_job(
+                job_id,
+                status=JobStatus.FAILED,
+                completed_at=datetime.now(timezone.utc),
+                error=f"Remote cursor-agent failed: {result['stderr']}"
+            )
+            return
+        
+        # Extract parsed content
+        parsed = result.get("parsed_content", {})
+        if not parsed:
+            # Try to parse if not already parsed
+            try:
+                parsed = parse_cursor_agent_output(result["stdout"])
+            except Exception:
+                parsed = {}
+        
+        ai_response_text = parsed.get("text", result["stdout"].strip())
+        thinking = parsed.get("thinking")
+        tool_calls = parsed.get("tool_calls")
+        
+        # Update remote chat metadata (message count, last message preview)
+        last_message_preview = ai_response_text[:100] if ai_response_text else None
+        update_remote_chat_metadata(
+            chat_id=job.chat_id,
+            message_count_delta=2,  # user + assistant
+            last_message_preview=last_message_preview
+        )
+        
+        # Update device last_seen
+        update_device_last_seen(remote_chat.device_id)
+        
+        # Mark job as completed
+        update_job(
+            job_id,
+            status=JobStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc),
+            result=ai_response_text,
+            thinking_content=thinking,
+            tool_calls=tool_calls
+        )
+        
+    except Exception as e:
+        # Mark job as failed
+        update_job(
+            job_id,
+            status=JobStatus.FAILED,
+            completed_at=datetime.now(timezone.utc),
+            error=f"Remote execution error: {str(e)}"
         )
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/chat.dart';
 import '../models/job.dart';
+import '../models/device.dart';
 
 /// Service for interacting with cursor-agent via REST API
 /// 
@@ -15,7 +16,7 @@ class CursorAgentService {
   final http.Client _client;
   
   CursorAgentService({
-    this.baseUrl = 'http://192.168.1.120:8000',
+    this.baseUrl = 'http://localhost:8000',
     http.Client? client,
   }) : _client = client ?? http.Client();
 
@@ -328,6 +329,223 @@ class CursorAgentService {
     } else {
       throw CursorAgentException('Failed to cancel job: ${response.statusCode}');
     }
+  }
+
+  // =========================================================================
+  // Device Management (NEW - Remote SSH Support)
+  // =========================================================================
+
+  /// Create a new device configuration
+  Future<Device> createDevice(DeviceCreate deviceCreate) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/devices'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(deviceCreate.toJson()),
+    ).timeout(const Duration(seconds: 10));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return Device.fromJson(data['device']);
+    } else {
+      throw CursorAgentException('Failed to create device: ${response.statusCode}');
+    }
+  }
+
+  /// List all configured devices
+  Future<List<Device>> listDevices({bool includeInactive = false}) async {
+    final uri = Uri.parse('$baseUrl/devices').replace(
+      queryParameters: {'include_inactive': includeInactive.toString()},
+    );
+    
+    final response = await _client.get(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 10));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return (data['devices'] as List)
+          .map((deviceJson) => Device.fromJson(deviceJson))
+          .toList();
+    } else {
+      throw CursorAgentException('Failed to list devices: ${response.statusCode}');
+    }
+  }
+
+  /// Get device details by ID
+  Future<Device> getDevice(String deviceId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/devices/$deviceId'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 10));
+    
+    if (response.statusCode == 200) {
+      return Device.fromJson(json.decode(response.body));
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Device not found: $deviceId');
+    } else {
+      throw CursorAgentException('Failed to get device: ${response.statusCode}');
+    }
+  }
+
+  /// Update device configuration
+  Future<Device> updateDevice(String deviceId, DeviceUpdate deviceUpdate) async {
+    final response = await _client.put(
+      Uri.parse('$baseUrl/devices/$deviceId'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(deviceUpdate.toJson()),
+    ).timeout(const Duration(seconds: 10));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return Device.fromJson(data['device']);
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Device not found: $deviceId');
+    } else {
+      throw CursorAgentException('Failed to update device: ${response.statusCode}');
+    }
+  }
+
+  /// Delete a device
+  Future<void> deleteDevice(String deviceId) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/devices/$deviceId'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 10));
+    
+    if (response.statusCode == 200) {
+      return;
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Device not found: $deviceId');
+    } else {
+      throw CursorAgentException('Failed to delete device: ${response.statusCode}');
+    }
+  }
+
+  /// Test SSH connection to a device
+  Future<DeviceTestResult> testDevice(String deviceId) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/devices/$deviceId/test'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+    
+    if (response.statusCode == 200) {
+      return DeviceTestResult.fromJson(json.decode(response.body));
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Device not found: $deviceId');
+    } else {
+      throw CursorAgentException('Failed to test device: ${response.statusCode}');
+    }
+  }
+
+  /// Verify cursor-agent is installed on remote device
+  Future<Map<String, dynamic>> verifyAgentInstalled(String deviceId) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/devices/$deviceId/verify-agent'),
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+    
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Device not found: $deviceId');
+    } else {
+      throw CursorAgentException('Failed to verify agent: ${response.statusCode}');
+    }
+  }
+
+  /// Verify a directory exists on remote device
+  Future<Map<String, dynamic>> verifyDirectory(
+    String deviceId,
+    String directory,
+  ) async {
+    final uri = Uri.parse('$baseUrl/devices/$deviceId/verify-directory').replace(
+      queryParameters: {'directory': directory},
+    );
+    
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+    
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Device not found: $deviceId');
+    } else {
+      throw CursorAgentException('Failed to verify directory: ${response.statusCode}');
+    }
+  }
+
+  /// Browse remote directory contents
+  Future<List<DirectoryEntry>> browseRemoteDirectory(
+    String deviceId,
+    String directory,
+  ) async {
+    final uri = Uri.parse('$baseUrl/devices/$deviceId/browse').replace(
+      queryParameters: {'directory': directory},
+    );
+    
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+    ).timeout(const Duration(seconds: 15));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['success'] == true) {
+        return (data['entries'] as List)
+            .map((e) => DirectoryEntry.fromJson(e))
+            .toList();
+      } else {
+        throw CursorAgentException(data['error'] ?? 'Failed to browse directory');
+      }
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Device not found: $deviceId');
+    } else {
+      throw CursorAgentException('Failed to browse directory: ${response.statusCode}');
+    }
+  }
+
+  /// Create a new chat on a remote device
+  Future<String> createRemoteChat(
+    String deviceId,
+    String workingDirectory, {
+    String? name,
+  }) async {
+    final remoteChatCreate = RemoteChatCreate(
+      deviceId: deviceId,
+      workingDirectory: workingDirectory,
+      name: name,
+    );
+    
+    final response = await _client.post(
+      Uri.parse('$baseUrl/devices/$deviceId/create-chat'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(remoteChatCreate.toJson()),
+    ).timeout(const Duration(seconds: 20));
+    
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return data['chat_id'];
+    } else if (response.statusCode == 404) {
+      throw CursorAgentException('Device not found: $deviceId');
+    } else if (response.statusCode == 400) {
+      final error = json.decode(response.body);
+      throw CursorAgentException(error['detail'] ?? 'Invalid request');
+    } else {
+      final error = json.decode(response.body);
+      throw CursorAgentException(
+        error['detail'] ?? 'Failed to create remote chat: ${response.statusCode}'
+      );
+    }
+  }
+
+  /// Get remote chat information
+  Future<RemoteChatInfo?> getRemoteChatInfo(String chatId) async {
+    // This would need to be implemented on backend if we want to query individual chats
+    // For now, we can get this from the chat list
+    return null;
   }
 
   void dispose() {

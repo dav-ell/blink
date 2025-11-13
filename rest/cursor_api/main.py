@@ -12,7 +12,8 @@ import uvicorn
 
 from .config import settings
 from .services import cleanup_old_jobs
-from .api import health, chats, messages, agent, jobs
+from .api import health, chats, messages, agent, jobs, devices
+from .database.device_db import ensure_device_db_initialized
 
 
 # Background task for job cleanup
@@ -38,9 +39,14 @@ async def lifespan(app: FastAPI):
     print("Cursor Chat REST API Server")
     print("=" * 80)
     print(f"Database: {settings.db_path}")
+    print(f"Device Database: {settings.device_db_path}")
     print(f"Cursor Agent: {settings.cursor_agent_path}")
     print(f"API Host: {settings.api_host}:{settings.api_port}")
     print("=" * 80)
+    
+    # Initialize device database
+    ensure_device_db_initialized()
+    print("Device database initialized")
     
     # Start background job cleanup task
     cleanup_task = asyncio.create_task(periodic_job_cleanup())
@@ -79,6 +85,7 @@ app.include_router(chats.router)   # /chats/*
 app.include_router(messages.router)  # /chats/{id}/messages
 app.include_router(agent.router)   # /agent/* and /chats/{id}/agent-prompt*
 app.include_router(jobs.router)    # /jobs/*
+app.include_router(devices.router)  # /devices/*
 
 
 def main():
