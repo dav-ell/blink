@@ -36,9 +36,8 @@ async fn test_create_device() {
     
     let device_data = json!({
         "name": "Test Device",
-        "hostname": "test.example.com",
-        "username": "testuser",
-        "port": 22
+        "api_endpoint": "http://localhost:9876",
+        "api_key": "test_api_key_12345678901234567890"
     });
     
     let response = app

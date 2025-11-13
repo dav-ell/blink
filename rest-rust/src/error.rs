@@ -37,6 +37,12 @@ pub enum AppError {
     #[error("SSH error: {0}")]
     Ssh(String),
 
+    #[error("HTTP error: {0}")]
+    Http(String),
+
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     #[error("Timeout error: {0}")]
     Timeout(String),
 }
@@ -50,6 +56,8 @@ impl IntoResponse for AppError {
             AppError::SqlxDatabase(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             AppError::CursorAgent(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
             AppError::Ssh(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg),
+            AppError::Http(msg) => (StatusCode::BAD_GATEWAY, msg),
+            AppError::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::Timeout(msg) => (StatusCode::GATEWAY_TIMEOUT, msg),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };

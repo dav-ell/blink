@@ -7,9 +7,8 @@ use validator::Validate;
 pub(crate) struct DeviceRow {
     pub id: String,
     pub name: String,
-    pub hostname: String,
-    pub username: String,
-    pub port: i32,
+    pub api_endpoint: String,
+    pub api_key: Option<String>,
     pub cursor_agent_path: Option<String>,
     pub created_at: String,  // ISO 8601 string
     pub last_seen: Option<String>,  // ISO 8601 string
@@ -30,10 +29,9 @@ pub enum DeviceStatus {
 pub struct Device {
     pub id: String,
     pub name: String,
-    pub hostname: String,
-    pub username: String,
-    #[serde(default = "default_port")]
-    pub port: i32,
+    pub api_endpoint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_agent_path: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -50,9 +48,8 @@ impl From<DeviceRow> for Device {
         Device {
             id: row.id,
             name: row.name,
-            hostname: row.hostname,
-            username: row.username,
-            port: row.port,
+            api_endpoint: row.api_endpoint,
+            api_key: row.api_key,
             cursor_agent_path: row.cursor_agent_path,
             created_at: DateTime::parse_from_rfc3339(&row.created_at)
                 .map(|dt| dt.with_timezone(&Utc))
@@ -72,10 +69,6 @@ impl From<DeviceRow> for Device {
     }
 }
 
-fn default_port() -> i32 {
-    22
-}
-
 fn default_is_active() -> bool {
     true
 }
@@ -91,15 +84,12 @@ pub struct DeviceCreate {
     #[validate(length(min = 1, max = 100))]
     pub name: String,
     
-    #[validate(length(min = 1, max = 255))]
-    pub hostname: String,
+    #[validate(length(min = 1, max = 512))]
+    pub api_endpoint: String,
     
-    #[validate(length(min = 1, max = 100))]
-    pub username: String,
-    
-    #[serde(default = "default_port")]
-    #[validate(range(min = 1, max = 65535))]
-    pub port: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(length(min = 16))]
+    pub api_key: Option<String>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_agent_path: Option<String>,
@@ -112,16 +102,12 @@ pub struct DeviceUpdate {
     pub name: Option<String>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(length(min = 1, max = 255))]
-    pub hostname: Option<String>,
+    #[validate(length(min = 1, max = 512))]
+    pub api_endpoint: Option<String>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(length(min = 1, max = 100))]
-    pub username: Option<String>,
-    
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 1, max = 65535))]
-    pub port: Option<i32>,
+    #[validate(length(min = 16))]
+    pub api_key: Option<String>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_agent_path: Option<String>,

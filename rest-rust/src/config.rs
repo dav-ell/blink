@@ -23,9 +23,9 @@ pub struct Settings {
     // Device management configuration
     pub device_db_path: PathBuf,
     
-    // SSH configuration
-    pub ssh_timeout: u64,
-    pub ssh_connect_timeout: u64,
+    // Remote agent HTTP configuration
+    pub remote_agent_timeout: u64,
+    pub remote_agent_connect_timeout: u64,
     pub default_cursor_agent_path: String,
     
     // CORS configuration
@@ -48,8 +48,8 @@ impl Settings {
             .set_default("job_cleanup_max_age_hours", 1)?
             .set_default("job_cleanup_interval_minutes", 30)?
             .set_default("device_db_path", format!("{}/.cursor_agent_devices.db", home))?
-            .set_default("ssh_timeout", 120)?
-            .set_default("ssh_connect_timeout", 10)?
+            .set_default("remote_agent_timeout", 120)?
+            .set_default("remote_agent_connect_timeout", 10)?
             .set_default("default_cursor_agent_path", "~/.local/bin/cursor-agent")?
             .set_default("cors_allow_origins", vec!["*"])?
             .set_default("cors_allow_credentials", true)?

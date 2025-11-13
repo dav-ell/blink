@@ -11,9 +11,8 @@ pub async fn ensure_device_db_initialized(pool: &SqlitePool) -> Result<()> {
         CREATE TABLE IF NOT EXISTS devices (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            hostname TEXT NOT NULL,
-            username TEXT NOT NULL,
-            port INTEGER NOT NULL DEFAULT 22,
+            api_endpoint TEXT NOT NULL,
+            api_key TEXT,
             cursor_agent_path TEXT,
             created_at TEXT NOT NULL,
             last_seen TEXT,
@@ -50,7 +49,7 @@ pub async fn ensure_device_db_initialized(pool: &SqlitePool) -> Result<()> {
 /// Get all devices
 pub async fn get_all_devices(pool: &SqlitePool) -> Result<Vec<Device>> {
     let rows = sqlx::query_as::<_, DeviceRow>(
-        "SELECT id, name, hostname, username, port, cursor_agent_path, 
+        "SELECT id, name, api_endpoint, api_key, cursor_agent_path, 
                 created_at, last_seen, is_active, status 
          FROM devices 
          WHERE is_active = 1 
@@ -65,7 +64,7 @@ pub async fn get_all_devices(pool: &SqlitePool) -> Result<Vec<Device>> {
 /// Get a device by ID
 pub async fn get_device(pool: &SqlitePool, device_id: &str) -> Result<Option<Device>> {
     let row = sqlx::query_as::<_, DeviceRow>(
-        "SELECT id, name, hostname, username, port, cursor_agent_path, 
+        "SELECT id, name, api_endpoint, api_key, cursor_agent_path, 
                 created_at, last_seen, is_active, status 
          FROM devices 
          WHERE id = ?"

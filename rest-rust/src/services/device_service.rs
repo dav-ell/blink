@@ -22,16 +22,15 @@ pub async fn create_device(pool: &SqlitePool, device_create: DeviceCreate) -> Re
     
     sqlx::query(
         r#"
-        INSERT INTO devices (id, name, hostname, username, port, cursor_agent_path, 
+        INSERT INTO devices (id, name, api_endpoint, api_key, cursor_agent_path, 
                             created_at, is_active, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'unknown')
+        VALUES (?, ?, ?, ?, ?, ?, 1, 'unknown')
         "#,
     )
     .bind(&device_id)
     .bind(&device_create.name)
-    .bind(&device_create.hostname)
-    .bind(&device_create.username)
-    .bind(device_create.port)
+    .bind(&device_create.api_endpoint)
+    .bind(device_create.api_key.as_deref())
     .bind(device_create.cursor_agent_path.as_deref())
     .bind(now.to_rfc3339())
     .execute(pool)
@@ -40,9 +39,8 @@ pub async fn create_device(pool: &SqlitePool, device_create: DeviceCreate) -> Re
     Ok(Device {
         id: device_id,
         name: device_create.name,
-        hostname: device_create.hostname,
-        username: device_create.username,
-        port: device_create.port,
+        api_endpoint: device_create.api_endpoint,
+        api_key: device_create.api_key,
         cursor_agent_path: device_create.cursor_agent_path,
         created_at: now,
         last_seen: None,

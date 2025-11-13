@@ -80,14 +80,11 @@ pub async fn update_device(
     if let Some(name) = update.name {
         device.name = name;
     }
-    if let Some(hostname) = update.hostname {
-        device.hostname = hostname;
+    if let Some(api_endpoint) = update.api_endpoint {
+        device.api_endpoint = api_endpoint;
     }
-    if let Some(username) = update.username {
-        device.username = username;
-    }
-    if let Some(port) = update.port {
-        device.port = port;
+    if update.api_key.is_some() {
+        device.api_key = update.api_key;
     }
     if update.cursor_agent_path.is_some() {
         device.cursor_agent_path = update.cursor_agent_path;
@@ -97,14 +94,13 @@ pub async fn update_device(
     sqlx::query(
         r#"
         UPDATE devices 
-        SET name = ?, hostname = ?, username = ?, port = ?, cursor_agent_path = ?
+        SET name = ?, api_endpoint = ?, api_key = ?, cursor_agent_path = ?
         WHERE id = ?
         "#,
     )
     .bind(&device.name)
-    .bind(&device.hostname)
-    .bind(&device.username)
-    .bind(device.port)
+    .bind(&device.api_endpoint)
+    .bind(device.api_key.as_deref())
     .bind(device.cursor_agent_path.as_deref())
     .bind(&device_id)
     .execute(&state.job_pool)
@@ -134,7 +130,7 @@ pub async fn delete_device(
     })))
 }
 
-/// POST /devices/:id/test - Test SSH connection
+/// POST /devices/:id/test - Test HTTP connection to remote agent
 pub async fn test_device_connection(
     State(state): State<Arc<AppState>>,
     Path(device_id): Path<String>,
@@ -143,7 +139,7 @@ pub async fn test_device_connection(
         .await?
         .ok_or(AppError::NotFound(format!("Device not found: {}", device_id)))?;
     
-    let response = services::test_ssh_connection(&device, state.settings.ssh_connect_timeout).await?;
+    let response = services::test_http_connection(&device, state.settings.remote_agent_connect_timeout).await?;
     
     // Update device status
     if response.success {
@@ -167,7 +163,7 @@ pub async fn test_device_connection(
     })))
 }
 
-/// POST /devices/:id/verify-agent - Verify cursor-agent is installed
+/// POST /devices/:id/verify-agent - Verify remote agent service is running
 pub async fn verify_agent_installed(
     State(state): State<Arc<AppState>>,
     Path(device_id): Path<String>,
@@ -176,15 +172,9 @@ pub async fn verify_agent_installed(
         .await?
         .ok_or(AppError::NotFound(format!("Device not found: {}", device_id)))?;
     
-    let cursor_agent_path = device
-        .cursor_agent_path
-        .as_deref()
-        .unwrap_or(&state.settings.default_cursor_agent_path);
-    
-    let response = services::verify_cursor_agent(
+    let response = services::test_http_connection(
         &device,
-        cursor_agent_path,
-        state.settings.ssh_connect_timeout,
+        state.settings.remote_agent_connect_timeout,
     )
     .await?;
     
@@ -193,7 +183,7 @@ pub async fn verify_agent_installed(
         "success": response.success,
         "stdout": response.stdout,
         "stderr": response.stderr,
-        "version": response.stdout.trim(),
+        "version": response.stdout.lines().next().unwrap_or("unknown"),
     })))
 }
 
@@ -294,7 +284,7 @@ pub async fn list_remote_chats(
     })))
 }
 
-/// POST /devices/chats/:chat_id/send-prompt - Send prompt to remote chat via SSH
+/// POST /devices/chats/:chat_id/send-prompt - Send prompt to remote chat via HTTP
 pub async fn send_remote_prompt(
     State(state): State<Arc<AppState>>,
     Path(chat_id): Path<String>,
@@ -313,7 +303,7 @@ pub async fn send_remote_prompt(
             remote_chat.device_id
         )))?;
     
-    // Execute cursor-agent remotely via SSH
+    // Execute cursor-agent remotely via HTTP
     let model_str = if !request.model.is_empty() {
         Some(request.model.as_str())
     } else {

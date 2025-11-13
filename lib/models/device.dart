@@ -1,4 +1,4 @@
-/// Device and remote chat models for SSH orchestration
+/// Device and remote chat models for HTTP-based remote agent orchestration
 
 enum DeviceStatus {
   online,
@@ -42,9 +42,8 @@ enum ChatLocation {
 class Device {
   final String id;
   final String name;
-  final String hostname;
-  final String username;
-  final int port;
+  final String apiEndpoint;
+  final String? apiKey;
   final String? cursorAgentPath;
   final DateTime createdAt;
   final DateTime? lastSeen;
@@ -54,9 +53,8 @@ class Device {
   Device({
     required this.id,
     required this.name,
-    required this.hostname,
-    required this.username,
-    this.port = 22,
+    required this.apiEndpoint,
+    this.apiKey,
     this.cursorAgentPath,
     required this.createdAt,
     this.lastSeen,
@@ -68,9 +66,8 @@ class Device {
     return Device(
       id: json['id'],
       name: json['name'],
-      hostname: json['hostname'],
-      username: json['username'],
-      port: json['port'] ?? 22,
+      apiEndpoint: json['api_endpoint'],
+      apiKey: json['api_key'],
       cursorAgentPath: json['cursor_agent_path'],
       createdAt: DateTime.parse(json['created_at']),
       lastSeen: json['last_seen'] != null 
@@ -85,9 +82,8 @@ class Device {
     return {
       'id': id,
       'name': name,
-      'hostname': hostname,
-      'username': username,
-      'port': port,
+      'api_endpoint': apiEndpoint,
+      if (apiKey != null) 'api_key': apiKey,
       'cursor_agent_path': cursorAgentPath,
       'created_at': createdAt.toIso8601String(),
       'last_seen': lastSeen?.toIso8601String(),
@@ -98,9 +94,8 @@ class Device {
 
   Device copyWith({
     String? name,
-    String? hostname,
-    String? username,
-    int? port,
+    String? apiEndpoint,
+    String? apiKey,
     String? cursorAgentPath,
     DateTime? lastSeen,
     bool? isActive,
@@ -109,9 +104,8 @@ class Device {
     return Device(
       id: id,
       name: name ?? this.name,
-      hostname: hostname ?? this.hostname,
-      username: username ?? this.username,
-      port: port ?? this.port,
+      apiEndpoint: apiEndpoint ?? this.apiEndpoint,
+      apiKey: apiKey ?? this.apiKey,
       cursorAgentPath: cursorAgentPath ?? this.cursorAgentPath,
       createdAt: createdAt,
       lastSeen: lastSeen ?? this.lastSeen,
@@ -123,25 +117,22 @@ class Device {
 
 class DeviceCreate {
   final String name;
-  final String hostname;
-  final String username;
-  final int port;
+  final String apiEndpoint;
+  final String? apiKey;
   final String? cursorAgentPath;
 
   DeviceCreate({
     required this.name,
-    required this.hostname,
-    required this.username,
-    this.port = 22,
+    required this.apiEndpoint,
+    this.apiKey,
     this.cursorAgentPath,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'name': name,
-      'hostname': hostname,
-      'username': username,
-      'port': port,
+      'api_endpoint': apiEndpoint,
+      if (apiKey != null) 'api_key': apiKey,
       if (cursorAgentPath != null) 'cursor_agent_path': cursorAgentPath,
     };
   }
@@ -149,17 +140,15 @@ class DeviceCreate {
 
 class DeviceUpdate {
   final String? name;
-  final String? hostname;
-  final String? username;
-  final int? port;
+  final String? apiEndpoint;
+  final String? apiKey;
   final String? cursorAgentPath;
   final bool? isActive;
 
   DeviceUpdate({
     this.name,
-    this.hostname,
-    this.username,
-    this.port,
+    this.apiEndpoint,
+    this.apiKey,
     this.cursorAgentPath,
     this.isActive,
   });
@@ -167,9 +156,8 @@ class DeviceUpdate {
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
     if (name != null) json['name'] = name;
-    if (hostname != null) json['hostname'] = hostname;
-    if (username != null) json['username'] = username;
-    if (port != null) json['port'] = port;
+    if (apiEndpoint != null) json['api_endpoint'] = apiEndpoint;
+    if (apiKey != null) json['api_key'] = apiKey;
     if (cursorAgentPath != null) json['cursor_agent_path'] = cursorAgentPath;
     if (isActive != null) json['is_active'] = isActive;
     return json;
