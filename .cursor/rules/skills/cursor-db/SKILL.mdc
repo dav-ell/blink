@@ -34,6 +34,24 @@ Specialized knowledge of Cursor IDE's internal SQLite database structure, includ
 %APPDATA%\Cursor\User\globalStorage\state.vscdb
 ```
 
+### Important: Workspace vs Global Storage
+
+**⚠️ CRITICAL:** Cursor stores **ALL chat data** in `globalStorage/state.vscdb`, NOT in workspace-specific databases.
+
+While Cursor creates workspace-specific databases at:
+```
+~/Library/Application Support/Cursor/User/workspaceStorage/{workspaceId}/state.vscdb
+```
+
+These workspace databases:
+- ❌ Do NOT contain chat data (composerData or bubbleId entries)
+- ✅ May contain workspace-specific settings or state
+- ✅ Use the same schema but remain empty for chat purposes
+
+**For chat operations, always use globalStorage/state.vscdb.**
+
+See `rest/WORKSPACE_DATABASE_ANALYSIS.md` for detailed investigation results.
+
 ### Quick Access
 
 ```bash
