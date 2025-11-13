@@ -9,7 +9,7 @@ class AgentPromptRequest(BaseModel):
     prompt: str
     include_history: bool = True
     max_history_messages: Optional[int] = 20
-    model: Optional[str] = None
+    model: str = "sonnet-4.5-thinking"
     output_format: str = "text"
     
     class Config:
@@ -18,7 +18,7 @@ class AgentPromptRequest(BaseModel):
                 "prompt": "Please help me understand this code",
                 "include_history": True,
                 "max_history_messages": 10,
-                "model": "gpt-5",
+                "model": "sonnet-4.5-thinking",
                 "output_format": "text"
             }
         }

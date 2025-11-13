@@ -30,6 +30,8 @@ class Job:
     user_bubble_id: Optional[str] = None
     assistant_bubble_id: Optional[str] = None
     model: Optional[str] = None
+    thinking_content: Optional[str] = None
+    tool_calls: Optional[list] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""

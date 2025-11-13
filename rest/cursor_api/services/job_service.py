@@ -19,12 +19,17 @@ def create_job(chat_id: str, prompt: str, model: Optional[str] = None) -> Job:
     Args:
         chat_id: Chat UUID
         prompt: User prompt text
-        model: Optional AI model to use
+        model: AI model to use (defaults to sonnet-4.5-thinking)
         
     Returns:
         Created Job instance
     """
     job_id = str(uuid_lib.uuid4())
+    
+    # Set default model if not specified
+    if model is None:
+        model = "sonnet-4.5-thinking"
+    
     job = Job(
         job_id=job_id,
         chat_id=chat_id,

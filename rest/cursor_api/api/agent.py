@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 
 from ..config import settings
 from ..models.request import AgentPromptRequest
-from ..database import get_db_connection, save_message_to_db, update_chat_metadata
+from ..database import get_db_connection, save_message_to_db, update_chat_metadata, ensure_chat_exists
 from ..services import run_cursor_agent, execute_job_in_background, create_job, get_chat_jobs
 from ..services.agent_service import AVAILABLE_MODELS
 from ..services.chat_service import create_new_chat
@@ -41,7 +41,7 @@ def send_agent_prompt(
     {
         "prompt": "What did we discuss about authentication?",
         "include_history": true,
-        "model": "gpt-5",
+        "model": "sonnet-4.5-thinking",
         "output_format": "text"
     }
     ```
@@ -55,54 +55,8 @@ def send_agent_prompt(
     conn = get_db_connection()
     
     try:
-        # Check if chat exists, create if it doesn't
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT value FROM cursorDiskKV WHERE key = ?",
-            (f'composerData:{chat_id}',)
-        )
-        existing_chat = cursor.fetchone()
-        
-        if not existing_chat:
-            # Chat doesn't exist - create minimal metadata
-            # This happens when using /agent/create-chat which only generates an ID
-            now_ms = int(datetime.now().timestamp() * 1000)
-            
-            chat_metadata = {
-                "_v": 10,
-                "composerId": chat_id,
-                "name": "Untitled",
-                "richText": json.dumps({
-                    "root": {
-                        "children": [{
-                            "children": [],
-                            "format": "",
-                            "indent": 0,
-                            "type": "paragraph",
-                            "version": 1
-                        }],
-                        "format": "",
-                        "indent": 0,
-                        "type": "root",
-                        "version": 1
-                    }
-                }),
-                "hasLoaded": True,
-                "text": "",
-                "fullConversationHeadersOnly": [],
-                "createdAt": now_ms,
-                "lastUpdatedAt": now_ms,
-                "isArchived": False,
-                "isDraft": False,
-                "totalLinesAdded": 0,
-                "totalLinesRemoved": 0,
-            }
-            
-            cursor.execute(
-                "INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)",
-                (f'composerData:{chat_id}', json.dumps(chat_metadata))
-            )
-            conn.commit()
+        # Ensure chat exists (auto-create if needed)
+        was_created, metadata = ensure_chat_exists(conn, chat_id)
         
         # Start transaction
         conn.execute("BEGIN TRANSACTION")
@@ -119,12 +73,12 @@ def send_agent_prompt(
         # Save user message
         save_message_to_db(conn, chat_id, user_bubble_id, user_bubble)
         
-        # Call cursor-agent for AI response
+        # Call cursor-agent for AI response with stream-json to get rich content
         result = run_cursor_agent(
             chat_id=chat_id,
             prompt=request.prompt,
             model=request.model,
-            output_format=request.output_format,
+            output_format="stream-json",  # Always use stream-json to get tool calls and thinking
             timeout=90
         )
         
@@ -137,11 +91,20 @@ def send_agent_prompt(
                 detail=f"cursor-agent failed: {result['stderr']}"
             )
         
-        # Parse AI response
-        ai_response_text = result["stdout"].strip()
+        # Extract parsed content (text, thinking, tool_calls)
+        parsed = result.get("parsed_content", {})
+        ai_response_text = parsed.get("text", result["stdout"].strip())
+        thinking = parsed.get("thinking")
+        tool_calls = parsed.get("tool_calls")
         
-        # Create and validate AI response bubble
-        assistant_bubble = create_bubble_data(assistant_bubble_id, 2, ai_response_text)
+        # Create and validate AI response bubble with rich content
+        assistant_bubble = create_bubble_data(
+            assistant_bubble_id,
+            2,  # assistant message type
+            ai_response_text,
+            thinking=thinking,
+            tool_calls=tool_calls
+        )
         if not validate_bubble_structure(assistant_bubble):
             conn.rollback()
             conn.close()
@@ -159,14 +122,16 @@ def send_agent_prompt(
         # Commit transaction
         conn.commit()
         
-        # Build response
+        # Build response with rich content
         response_obj = {
             "status": "success",
             "chat_id": chat_id,
             "prompt": request.prompt,
             "model": request.model or "default",
-            "output_format": request.output_format,
+            "output_format": "stream-json",
             "response": ai_response_text,
+            "thinking_content": thinking,
+            "tool_calls": tool_calls,
             "user_bubble_id": user_bubble_id,
             "assistant_bubble_id": assistant_bubble_id,
             "metadata": {
@@ -207,7 +172,7 @@ def submit_prompt_async(
     POST /chats/{chat_id}/agent-prompt-async
     {
         "prompt": "What did we discuss about authentication?",
-        "model": "gpt-5"
+        "model": "sonnet-4.5-thinking"
     }
     
     Response:
@@ -225,22 +190,13 @@ def submit_prompt_async(
             detail=f"cursor-agent not found at {settings.cursor_agent_path}"
         )
     
-    # Verify chat exists
+    # Ensure chat exists (auto-create if needed)
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT value FROM cursorDiskKV WHERE key = ?",
-            (f'composerData:{chat_id}',)
-        )
-        if not cursor.fetchone():
-            conn.close()
-            raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
+        was_created, metadata = ensure_chat_exists(conn, chat_id)
         conn.close()
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error checking chat: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error ensuring chat exists: {str(e)}")
     
     # Create job
     job = create_job(chat_id, request.prompt, request.model)
@@ -325,8 +281,8 @@ def list_available_models():
     """
     return {
         "models": AVAILABLE_MODELS,
-        "default": "auto",
-        "recommended": ["gpt-5", "sonnet-4.5", "opus-4.1"]
+        "default": "sonnet-4.5-thinking",
+        "recommended": ["sonnet-4.5-thinking", "sonnet-4.5", "gpt-5"]
     }
 
 

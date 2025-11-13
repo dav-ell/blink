@@ -3,7 +3,82 @@
 import json
 import sqlite3
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
+
+
+def ensure_chat_exists(
+    conn: sqlite3.Connection,
+    chat_id: str
+) -> Tuple[bool, Dict[str, Any]]:
+    """Ensure chat metadata exists in database, create if missing
+    
+    This implements the auto-create pattern from SKILL.mdc to handle the case
+    where cursor-agent create-chat returns a UUID but doesn't create the database entry.
+    
+    Args:
+        conn: SQLite connection
+        chat_id: Chat UUID
+        
+    Returns:
+        Tuple of (was_created: bool, metadata: dict)
+        - was_created: True if chat was created, False if it already existed
+        - metadata: The chat metadata dictionary
+    """
+    cursor = conn.cursor()
+    
+    # Check if chat exists
+    cursor.execute(
+        "SELECT value FROM cursorDiskKV WHERE key = ?",
+        (f'composerData:{chat_id}',)
+    )
+    existing_chat = cursor.fetchone()
+    
+    if existing_chat:
+        # Chat exists, return existing metadata
+        metadata = json.loads(existing_chat[0])
+        return False, metadata
+    
+    # Chat doesn't exist - create minimal metadata
+    # This happens when using /agent/create-chat which only generates an ID
+    now_ms = int(datetime.now().timestamp() * 1000)
+    
+    chat_metadata = {
+        "_v": 10,
+        "composerId": chat_id,
+        "name": "Untitled",
+        "richText": json.dumps({
+            "root": {
+                "children": [{
+                    "children": [],
+                    "format": "",
+                    "indent": 0,
+                    "type": "paragraph",
+                    "version": 1
+                }],
+                "format": "",
+                "indent": 0,
+                "type": "root",
+                "version": 1
+            }
+        }),
+        "hasLoaded": True,
+        "text": "",
+        "fullConversationHeadersOnly": [],
+        "createdAt": now_ms,
+        "lastUpdatedAt": now_ms,
+        "isArchived": False,
+        "isDraft": False,
+        "totalLinesAdded": 0,
+        "totalLinesRemoved": 0,
+    }
+    
+    cursor.execute(
+        "INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)",
+        (f'composerData:{chat_id}', json.dumps(chat_metadata))
+    )
+    conn.commit()
+    
+    return True, chat_metadata
 
 
 def save_message_to_db(

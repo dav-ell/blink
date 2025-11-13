@@ -6,7 +6,13 @@ from datetime import datetime, timezone
 from typing import Dict, Any
 
 
-def create_bubble_data(bubble_id: str, message_type: int, text: str) -> Dict[str, Any]:
+def create_bubble_data(
+    bubble_id: str,
+    message_type: int,
+    text: str,
+    thinking: str = None,
+    tool_calls: list = None
+) -> Dict[str, Any]:
     """Create a complete bubble data structure matching Cursor's format
     
     This includes all fields that Cursor expects to properly load and display chats.
@@ -16,6 +22,8 @@ def create_bubble_data(bubble_id: str, message_type: int, text: str) -> Dict[str
         bubble_id: Unique bubble UUID
         message_type: Message type (1=user, 2=assistant)
         text: Message text content
+        thinking: Optional thinking/reasoning content
+        tool_calls: Optional list of tool call dictionaries
         
     Returns:
         Complete bubble data dictionary
@@ -170,6 +178,22 @@ def create_bubble_data(bubble_id: str, message_type: int, text: str) -> Dict[str
         # Unified mode (standard value)
         "unifiedMode": 5,
     }
+    
+    # Add thinking content if provided
+    if thinking:
+        bubble["thinking"] = {"text": thinking}
+    
+    # Add tool calls if provided (convert our simplified format to Cursor's format)
+    if tool_calls:
+        # For now, store the first tool call in toolFormerData
+        # Cursor's format stores tool calls in toolFormerData field
+        if len(tool_calls) > 0:
+            tool = tool_calls[0]
+            bubble["toolFormerData"] = {
+                "name": tool.get("name", "unknown"),
+                "rawArgs": json.dumps(tool.get("arguments", {})),
+                "additionalData": {}
+            }
     
     # Add model info for assistant messages
     if message_type == 2:
