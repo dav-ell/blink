@@ -144,7 +144,8 @@ class ChatProvider with ChangeNotifier {
   
   @override
   void dispose() {
-    _chatService.dispose();
+    // Don't dispose singleton service - it's managed by the service locator
+    // _chatService.dispose();
     super.dispose();
   }
 }

@@ -141,7 +141,8 @@ class JobPollingProvider with ChangeNotifier {
   @override
   void dispose() {
     stopAll();
-    _repository.dispose();
+    // Don't dispose singleton repository - it's managed by the service locator
+    // _repository.dispose();
     super.dispose();
   }
 }

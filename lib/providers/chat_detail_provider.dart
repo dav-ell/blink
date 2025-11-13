@@ -285,8 +285,9 @@ class ChatDetailProvider with ChangeNotifier {
   @override
   void dispose() {
     _jobPollingProvider.stopAll();
-    _chatService.dispose();
-    _repository.dispose();
+    // Don't dispose singleton services - they're managed by the service locator
+    // _chatService.dispose();
+    // _repository.dispose();
     super.dispose();
   }
 }

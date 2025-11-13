@@ -59,11 +59,10 @@ class ChatService {
 
     return result.when(
       success: (chats) {
-        // Update caches
+        // Update list cache only
         _listCache.set(cacheKey, chats);
-        for (final chat in chats) {
-          _chatCache.set(chat.id, chat);
-        }
+        // Don't cache individual chats from list - they don't have messages
+        // Only cache full chats when fetched individually
         return chats;
       },
       failure: (error) => throw Exception(error),

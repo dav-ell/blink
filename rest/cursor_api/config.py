@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     """Application settings with type-safe configuration"""
     
     # Database configuration
+    # NOTE: Cursor stores ALL chat data in globalStorage/state.vscdb, not in 
+    # workspace-specific databases. Workspace databases exist at 
+    # workspaceStorage/{workspaceId}/state.vscdb but are empty or used for 
+    # workspace settings only. See WORKSPACE_DATABASE_ANALYSIS.md for details.
     db_path: str = os.path.expanduser(
         '~/Library/Application Support/Cursor/User/globalStorage/state.vscdb'
     )

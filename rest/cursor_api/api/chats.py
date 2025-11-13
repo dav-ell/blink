@@ -247,7 +247,14 @@ def get_chat_messages(
                     "created_at": metadata.get('createdAt'),
                     "created_at_iso": parse_timestamp(metadata.get('createdAt')),
                     "last_updated_at": metadata.get('lastUpdatedAt'),
-                    "last_updated_at_iso": parse_timestamp(metadata.get('lastUpdatedAt'))
+                    "last_updated_at_iso": parse_timestamp(metadata.get('lastUpdatedAt')),
+                    "is_archived": metadata.get('isArchived', False),
+                    "is_draft": metadata.get('isDraft', False),
+                    "total_lines_added": metadata.get('totalLinesAdded', 0),
+                    "total_lines_removed": metadata.get('totalLinesRemoved', 0),
+                    "subtitle": metadata.get('subtitle'),
+                    "unified_mode": metadata.get('unifiedMode'),
+                    "context_usage_percent": metadata.get('contextUsagePercent')
                 }
         
         return result

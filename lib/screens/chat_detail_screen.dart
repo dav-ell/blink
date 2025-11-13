@@ -36,9 +36,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
-    // Load chat details
+    // Load chat details with force refresh to get messages
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatDetailProvider>().loadChat(widget.chat.id);
+      context.read<ChatDetailProvider>().loadChat(
+        widget.chat.id,
+        forceRefresh: true,
+      );
     });
     
     // Start UI update timer for elapsed time updates
@@ -197,17 +200,20 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
   void _showErrorDialog(String error) {
     if (!mounted) return;
     
+    // Capture the widget's context before showing dialog
+    final widgetContext = context;
+    
     showCupertinoDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (dialogContext) => CupertinoAlertDialog(
         title: const Text('Error'),
         content: Text(error),
         actions: [
           CupertinoDialogAction(
             child: const Text('OK'),
             onPressed: () {
-              Navigator.pop(context);
-              context.read<ChatDetailProvider>().clearError();
+              Navigator.pop(dialogContext);
+              widgetContext.read<ChatDetailProvider>().clearError();
             },
           ),
         ],
