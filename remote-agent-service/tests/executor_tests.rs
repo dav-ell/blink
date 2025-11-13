@@ -14,6 +14,7 @@ async fn test_execute_with_valid_directory() {
         working_dir,
         "test-model",
         "json",
+        None, // correlation_id
     )
     .await;
     
@@ -32,6 +33,7 @@ async fn test_execute_with_invalid_directory() {
         "/nonexistent/directory/path",
         "test-model",
         "json",
+        None, // correlation_id
     )
     .await;
     
@@ -52,6 +54,7 @@ async fn test_execute_with_nonexistent_command() {
         working_dir,
         "test-model",
         "json",
+        None, // correlation_id
     )
     .await;
     
@@ -70,6 +73,7 @@ async fn test_execute_captures_stdout() {
         working_dir,
         "test-model",
         "json",
+        None, // correlation_id
     )
     .await
     .unwrap();
@@ -89,6 +93,7 @@ async fn test_execute_with_special_characters_in_prompt() {
         working_dir,
         "test-model",
         "json",
+        None, // correlation_id
     )
     .await;
     

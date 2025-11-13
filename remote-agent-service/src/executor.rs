@@ -20,14 +20,19 @@ pub async fn execute_cursor_agent(
     working_directory: &str,
     model: &str,
     output_format: &str,
+    correlation_id: Option<&str>,
 ) -> Result<ExecutionResult, AppError> {
-    tracing::debug!(
+    let corr_id = correlation_id.unwrap_or("unknown");
+    
+    tracing::info!(
         "Executing cursor-agent\n\
+         Correlation ID: {}\n\
          Path: {}\n\
          Chat ID: {}\n\
          Working Dir: {}\n\
          Model: {}\n\
          Output Format: {}",
+        corr_id,
         cursor_agent_path,
         chat_id,
         working_directory,
@@ -60,8 +65,12 @@ pub async fn execute_cursor_agent(
 
     tracing::debug!("Command: {:?}", cmd);
 
+    let start = std::time::Instant::now();
+    
     // Execute with timeout (5 minutes default)
     let execution = timeout(Duration::from_secs(300), cmd.output()).await;
+    
+    let duration = start.elapsed();
 
     match execution {
         Ok(Ok(output)) => {
@@ -69,6 +78,32 @@ pub async fn execute_cursor_agent(
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             let returncode = output.status.code().unwrap_or(-1);
             let success = output.status.success();
+
+            if success {
+                tracing::info!(
+                    "Cursor-agent execution successful\n\
+                     Correlation ID: {}\n\
+                     Return Code: {}\n\
+                     Execution Time: {:.2}s\n\
+                     Stdout Length: {} bytes",
+                    corr_id,
+                    returncode,
+                    duration.as_secs_f64(),
+                    stdout.len()
+                );
+            } else {
+                tracing::error!(
+                    "Cursor-agent execution failed\n\
+                     Correlation ID: {}\n\
+                     Return Code: {}\n\
+                     Execution Time: {:.2}s\n\
+                     Stderr: {}",
+                    corr_id,
+                    returncode,
+                    duration.as_secs_f64(),
+                    &stderr[..stderr.len().min(500)]
+                );
+            }
 
             Ok(ExecutionResult {
                 success,
@@ -78,14 +113,25 @@ pub async fn execute_cursor_agent(
             })
         }
         Ok(Err(e)) => {
-            tracing::error!("Failed to execute cursor-agent: {}", e);
+            tracing::error!(
+                "Failed to execute cursor-agent\n\
+                 Correlation ID: {}\n\
+                 Error: {}",
+                corr_id,
+                e
+            );
             Err(AppError::ExecutionError(format!(
                 "Failed to execute cursor-agent: {}",
                 e
             )))
         }
         Err(_) => {
-            tracing::error!("cursor-agent execution timed out");
+            tracing::error!(
+                "Cursor-agent execution timed out\n\
+                 Correlation ID: {}\n\
+                 Timeout: 5 minutes",
+                corr_id
+            );
             Err(AppError::ExecutionError(
                 "Command execution timed out after 5 minutes".to_string(),
             ))

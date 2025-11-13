@@ -22,15 +22,27 @@ pub async fn init_jobs_db(pool: &SqlitePool) -> Result<()> {
             assistant_bubble_id TEXT,
             model TEXT,
             thinking_content TEXT,
-            tool_calls TEXT
+            tool_calls TEXT,
+            retry_count INTEGER DEFAULT 0,
+            correlation_id TEXT,
+            device_id TEXT,
+            execution_time_ms INTEGER
         )
         "#,
     )
     .execute(pool)
     .await?;
     
-    // Create index for faster lookups
+    // Create indexes for faster lookups
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_chat_id ON jobs(chat_id)")
+        .execute(pool)
+        .await?;
+    
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_correlation_id ON jobs(correlation_id)")
+        .execute(pool)
+        .await?;
+    
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_status ON jobs(status)")
         .execute(pool)
         .await?;
     
@@ -47,11 +59,12 @@ pub async fn create_job(
     let job_id = Uuid::new_v4().to_string();
     let model = model.unwrap_or("sonnet-4.5-thinking");
     let now = Utc::now();
+    let correlation_id = crate::utils::request_context::get_correlation_id();
     
     sqlx::query(
         r#"
-        INSERT INTO jobs (job_id, chat_id, prompt, status, created_at, model)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO jobs (job_id, chat_id, prompt, status, created_at, model, correlation_id, retry_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&job_id)
@@ -60,6 +73,8 @@ pub async fn create_job(
     .bind("pending")
     .bind(now.to_rfc3339())
     .bind(model)
+    .bind(correlation_id.as_deref())
+    .bind(0)
     .execute(pool)
     .await?;
     
@@ -78,6 +93,10 @@ pub async fn create_job(
         model: Some(model.to_string()),
         thinking_content: None,
         tool_calls: None,
+        retry_count: 0,
+        correlation_id,
+        device_id: None,
+        execution_time_ms: None,
     })
 }
 
@@ -87,7 +106,8 @@ pub async fn get_job(pool: &SqlitePool, job_id: &str) -> Result<Option<Job>> {
         r#"
         SELECT job_id, chat_id, prompt, status, created_at, started_at, 
                completed_at, result, error, user_bubble_id, assistant_bubble_id,
-               model, thinking_content, tool_calls
+               model, thinking_content, tool_calls, retry_count, correlation_id,
+               device_id, execution_time_ms
         FROM jobs WHERE job_id = ?
         "#,
     )
@@ -113,6 +133,9 @@ pub async fn get_job(pool: &SqlitePool, job_id: &str) -> Result<Option<Job>> {
             
             let tool_calls_json: Option<String> = row.get("tool_calls");
             let tool_calls = tool_calls_json.and_then(|s| serde_json::from_str(&s).ok());
+            
+            let retry_count: Option<i64> = row.try_get("retry_count").ok();
+            let execution_time_ms: Option<i64> = row.try_get("execution_time_ms").ok();
             
             Ok(Some(Job {
                 job_id: row.get("job_id"),
@@ -140,6 +163,10 @@ pub async fn get_job(pool: &SqlitePool, job_id: &str) -> Result<Option<Job>> {
                 model: row.get("model"),
                 thinking_content: row.get("thinking_content"),
                 tool_calls,
+                retry_count: retry_count.unwrap_or(0) as u32,
+                correlation_id: row.get("correlation_id"),
+                device_id: row.get("device_id"),
+                execution_time_ms: execution_time_ms.map(|v| v as u64),
             }))
         }
         None => Ok(None),
@@ -212,7 +239,8 @@ pub async fn get_chat_jobs(
         r#"
         SELECT job_id, chat_id, prompt, status, created_at, started_at,
                completed_at, result, error, user_bubble_id, assistant_bubble_id,
-               model, thinking_content, tool_calls
+               model, thinking_content, tool_calls, retry_count, correlation_id,
+               device_id, execution_time_ms
         FROM jobs
         WHERE chat_id = ?
         ORDER BY created_at DESC
@@ -243,6 +271,9 @@ pub async fn get_chat_jobs(
         let tool_calls_json: Option<String> = row.get("tool_calls");
         let tool_calls = tool_calls_json.and_then(|s| serde_json::from_str(&s).ok());
         
+        let retry_count: Option<i64> = row.try_get("retry_count").ok();
+        let execution_time_ms: Option<i64> = row.try_get("execution_time_ms").ok();
+        
         jobs.push(Job {
             job_id: row.get("job_id"),
             chat_id: row.get("chat_id"),
@@ -269,6 +300,10 @@ pub async fn get_chat_jobs(
             model: row.get("model"),
             thinking_content: row.get("thinking_content"),
             tool_calls,
+            retry_count: retry_count.unwrap_or(0) as u32,
+            correlation_id: row.get("correlation_id"),
+            device_id: row.get("device_id"),
+            execution_time_ms: execution_time_ms.map(|v| v as u64),
         });
     }
     

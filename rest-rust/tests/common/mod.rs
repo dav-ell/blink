@@ -1,4 +1,4 @@
-use blink_api::{api, AppState, Settings};
+use blink_api::{api, AppState, Settings, middleware, utils::metrics::MetricsCollector};
 use axum::Router;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -23,6 +23,18 @@ pub fn create_test_settings() -> Settings {
         job_cleanup_interval_minutes: 60,
         cursor_agent_timeout: 600,
         api_reload: false,
+        ssh_timeout: 300,
+        ssh_connect_timeout: 10,
+        ssh_retry_attempts: 3,
+        http_retry_attempts: 3,
+        http_retry_delay_ms: 500,
+        http_max_backoff_ms: 10000,
+        connection_pool_size: 10,
+        connection_pool_timeout: 30,
+        enable_request_tracing: true,
+        enable_metrics: true,
+        metrics_export_path: None,
+        max_concurrent_remote_requests: 20,
         cors_allow_origins: vec!["*".to_string()],
         cors_allow_credentials: true,
     }
@@ -113,6 +125,18 @@ pub async fn create_test_app() -> Router {
         job_cleanup_interval_minutes: 60,
         cursor_agent_timeout: 600,
         api_reload: false,
+        ssh_timeout: 300,
+        ssh_connect_timeout: 10,
+        ssh_retry_attempts: 3,
+        http_retry_attempts: 3,
+        http_retry_delay_ms: 500,
+        http_max_backoff_ms: 10000,
+        connection_pool_size: 10,
+        connection_pool_timeout: 30,
+        enable_request_tracing: true,
+        enable_metrics: true,
+        metrics_export_path: None,
+        max_concurrent_remote_requests: 20,
         cors_allow_origins: vec!["*".to_string()],
         cors_allow_credentials: true,
     };
@@ -123,6 +147,8 @@ pub async fn create_test_app() -> Router {
     let state = Arc::new(AppState {
         settings,
         job_pool: pool,
+        metrics: MetricsCollector::new(),
+        circuit_breaker: middleware::DeviceCircuitBreaker::default(),
     });
     
     Router::new()

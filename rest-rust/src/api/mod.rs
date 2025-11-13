@@ -4,4 +4,5 @@ pub mod messages;
 pub mod agent;
 pub mod jobs;
 pub mod devices;
+pub mod metrics;
 

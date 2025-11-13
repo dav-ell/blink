@@ -18,6 +18,18 @@ pub struct Config {
     
     /// Command execution timeout in seconds
     pub execution_timeout: u64,
+    
+    /// Maximum execution timeout (safety limit)
+    pub max_execution_timeout: u64,
+    
+    /// Health check interval in seconds
+    pub health_check_interval: u64,
+    
+    /// Maximum concurrent executions
+    pub max_concurrent_executions: usize,
+    
+    /// Enable request tracing with correlation IDs
+    pub enable_request_tracing: bool,
 }
 
 impl Config {
@@ -52,12 +64,36 @@ impl Config {
             .parse()
             .context("Invalid EXECUTION_TIMEOUT value")?;
         
+        let max_execution_timeout = env::var("MAX_EXECUTION_TIMEOUT")
+            .unwrap_or_else(|_| "600".to_string())
+            .parse()
+            .context("Invalid MAX_EXECUTION_TIMEOUT value")?;
+        
+        let health_check_interval = env::var("HEALTH_CHECK_INTERVAL")
+            .unwrap_or_else(|_| "60".to_string())
+            .parse()
+            .context("Invalid HEALTH_CHECK_INTERVAL value")?;
+        
+        let max_concurrent_executions = env::var("MAX_CONCURRENT_EXECUTIONS")
+            .unwrap_or_else(|_| "10".to_string())
+            .parse()
+            .context("Invalid MAX_CONCURRENT_EXECUTIONS value")?;
+        
+        let enable_request_tracing = env::var("ENABLE_REQUEST_TRACING")
+            .unwrap_or_else(|_| "true".to_string())
+            .parse()
+            .unwrap_or(true);
+        
         Ok(Config {
             host,
             port,
             cursor_agent_path,
             api_key,
             execution_timeout,
+            max_execution_timeout,
+            health_check_interval,
+            max_concurrent_executions,
+            enable_request_tracing,
         })
     }
 }

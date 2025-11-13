@@ -36,12 +36,12 @@ fn test_config_missing_api_key() {
 
 #[test]
 fn test_config_api_key_too_short() {
-    common::cleanup_test_env(); // Clean first
-    
-    // Set short API key directly
-    env::set_var("API_KEY", &common::invalid_short_api_key());
+    // Set short API key (5 characters - less than minimum 16)
+    let short_key = "short";
+    env::set_var("API_KEY", short_key);
     env::set_var("HOST", "127.0.0.1");
     env::set_var("PORT", "9876");
+    env::set_var("CURSOR_AGENT_PATH", "/bin/echo");
     
     let config = Config::from_env();
     assert!(config.is_err(), "Config should fail with short API key");

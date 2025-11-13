@@ -1,5 +1,8 @@
 use axum::{
     extract::State,
+    http::{HeaderMap, Request, StatusCode},
+    middleware::{self, Next},
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -10,6 +13,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use remote_agent_service::{AppError, Config, execute_cursor_agent};
+use uuid::Uuid;
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -68,24 +72,36 @@ async fn health_handler(State(state): State<AppState>) -> Json<HealthResponse> {
 /// Execute cursor-agent command
 async fn execute_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<ExecuteRequest>,
 ) -> Result<Json<ExecuteResponse>, AppError> {
     let start = Instant::now();
+    
+    // Extract correlation ID from headers
+    let correlation_id = headers
+        .get("X-Correlation-ID")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     // Validate API key
     if payload.api_key != state.config.api_key {
         tracing::warn!(
-            "Unauthorized access attempt with invalid API key from request"
+            "Unauthorized access attempt\n\
+             Correlation ID: {}",
+            correlation_id
         );
         return Err(AppError::Unauthorized);
     }
 
     tracing::info!(
         "Executing cursor-agent command\n\
+         Correlation ID: {}\n\
          Chat ID: {}\n\
          Working Dir: {}\n\
          Model: {}\n\
          Prompt Length: {} chars",
+        correlation_id,
         payload.chat_id,
         payload.working_directory,
         payload.model,
@@ -100,6 +116,7 @@ async fn execute_handler(
         &payload.working_directory,
         &payload.model,
         &payload.output_format,
+        Some(&correlation_id),
     )
     .await?;
 
@@ -108,10 +125,12 @@ async fn execute_handler(
     if result.success {
         tracing::info!(
             "Command executed successfully\n\
+             Correlation ID: {}\n\
              Chat ID: {}\n\
              Return Code: {}\n\
              Execution Time: {}ms\n\
              Stdout Length: {} chars",
+            correlation_id,
             payload.chat_id,
             result.returncode,
             execution_time,
@@ -120,10 +139,12 @@ async fn execute_handler(
     } else {
         tracing::error!(
             "Command failed\n\
+             Correlation ID: {}\n\
              Chat ID: {}\n\
              Return Code: {}\n\
              Execution Time: {}ms\n\
              Stderr: {}",
+            correlation_id,
             payload.chat_id,
             result.returncode,
             execution_time,

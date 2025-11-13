@@ -259,6 +259,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "mockito",
+ "rand 0.8.5",
  "reqwest",
  "rstest",
  "rusqlite",

@@ -57,6 +57,14 @@ pub struct Job {
     pub thinking_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<Value>>,
+    #[serde(default)]
+    pub retry_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_time_ms: Option<u64>,
 }
 
 impl Job {

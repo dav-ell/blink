@@ -1,4 +1,4 @@
-use crate::{models::device::Device, Result, Settings};
+use crate::{models::device::Device, utils::retry::RetryPolicy, Result, Settings};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -14,7 +14,7 @@ pub struct HttpAgentResponse {
     pub device_name: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct ExecuteRequest {
     chat_id: String,
     prompt: String,
@@ -45,10 +45,15 @@ pub async fn test_http_connection(
     device: &Device,
     connect_timeout: u64,
 ) -> Result<HttpAgentResponse> {
+    let correlation_id = crate::utils::request_context::get_correlation_id()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    
     tracing::info!(
-        "[HTTP Connection Test] Testing connection to {} at {}",
+        "[HTTP Connection Test] Testing connection to {} at {}\n\
+         Correlation ID: {}",
         device.name,
-        device.api_endpoint
+        device.api_endpoint,
+        correlation_id
     );
     
     let client = Client::builder()
@@ -58,7 +63,11 @@ pub async fn test_http_connection(
     
     let health_url = format!("{}/health", device.api_endpoint);
     
-    let result = client.get(&health_url).send().await;
+    let result = client
+        .get(&health_url)
+        .header("X-Correlation-ID", &correlation_id)
+        .send()
+        .await;
     
     match result {
         Ok(response) => {
@@ -139,7 +148,7 @@ pub async fn test_http_connection(
     }
 }
 
-/// Execute cursor-agent on remote device via HTTP
+/// Execute cursor-agent on remote device via HTTP with retry logic
 pub async fn execute_remote_cursor_agent(
     settings: &Settings,
     device: &Device,
@@ -156,6 +165,9 @@ pub async fn execute_remote_cursor_agent(
         crate::AppError::Validation("Device API key is not configured".to_string())
     })?;
     
+    let correlation_id = crate::utils::request_context::get_correlation_id()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    
     tracing::info!(
         "[HTTP Remote Exec] Starting remote cursor-agent execution\n\
          Device: {} ({})\n\
@@ -163,14 +175,16 @@ pub async fn execute_remote_cursor_agent(
          Chat ID: {}\n\
          Working Dir: {}\n\
          Model: {}\n\
-         Prompt Length: {} chars",
+         Prompt Length: {} chars\n\
+         Correlation ID: {}",
         device.name,
         device.id,
         device.api_endpoint,
         chat_id,
         working_directory,
         model,
-        prompt.len()
+        prompt.len(),
+        correlation_id
     );
     
     // Build request payload
@@ -183,9 +197,12 @@ pub async fn execute_remote_cursor_agent(
         api_key: api_key.clone(),
     };
     
-    // Create HTTP client with timeout
+    // Create HTTP client with timeout and connection pooling
     let client = Client::builder()
         .timeout(Duration::from_secs(settings.remote_agent_timeout))
+        .connect_timeout(Duration::from_secs(settings.remote_agent_connect_timeout))
+        .pool_max_idle_per_host(settings.connection_pool_size)
+        .pool_idle_timeout(Duration::from_secs(settings.connection_pool_timeout))
         .build()
         .map_err(|e| crate::AppError::Http(format!("Failed to create HTTP client: {}", e)))?;
     
@@ -194,105 +211,139 @@ pub async fn execute_remote_cursor_agent(
     tracing::info!(
         "[HTTP Remote Exec] Sending request\n\
          URL: {}\n\
-         Timeout: {}s",
+         Timeout: {}s\n\
+         Retry Policy: {} attempts",
         execute_url,
-        settings.remote_agent_timeout
+        settings.remote_agent_timeout,
+        settings.http_retry_attempts
+    );
+    
+    // Execute with retry logic
+    let retry_policy = RetryPolicy::from_settings(
+        settings.http_retry_attempts,
+        settings.http_retry_delay_ms,
+        settings.http_max_backoff_ms,
     );
     
     let start = std::time::Instant::now();
-    let result = client.post(&execute_url).json(&request).send().await;
+    let device_id = device.id.clone();
+    let device_name = device.name.clone();
+    let execute_url_clone = execute_url.clone();
+    let correlation_id_clone = correlation_id.clone();
+    
+    let retry_result = retry_policy
+        .execute_with_metadata(|| {
+            let client = client.clone();
+            let url = execute_url_clone.clone();
+            let req = request.clone();
+            let corr_id = correlation_id_clone.clone();
+            
+            async move {
+                client
+                    .post(&url)
+                    .header("X-Correlation-ID", &corr_id)
+                    .json(&req)
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        if e.is_timeout() {
+                            crate::AppError::Timeout(format!("HTTP request timeout: {}", e))
+                        } else if e.is_connect() {
+                            crate::AppError::Http(format!("Connection failed: {}", e))
+                        } else {
+                            crate::AppError::Http(format!("Request failed: {}", e))
+                        }
+                    })
+            }
+        })
+        .await;
+    
     let duration = start.elapsed();
     
-    match result {
-        Ok(response) => {
-            let status_code = response.status();
-            
-            if status_code.is_success() {
-                // Parse the response
-                match response.json::<ExecuteResponse>().await {
-                    Ok(exec_response) => {
-                        if exec_response.success {
-                            tracing::info!(
-                                "[HTTP Remote Exec] ✅ Command executed successfully\n\
-                                 Device: {}\n\
-                                 Return Code: {}\n\
-                                 Execution Time: {:.2}s\n\
-                                 Remote Execution Time: {}ms\n\
-                                 Stdout Length: {} chars",
-                                device.name,
-                                exec_response.returncode,
-                                duration.as_secs_f64(),
-                                exec_response.execution_time_ms,
-                                exec_response.stdout.len()
-                            );
-                        } else {
-                            tracing::error!(
-                                "[HTTP Remote Exec] ❌ Command failed\n\
-                                 Device: {}\n\
-                                 Return Code: {}\n\
-                                 Execution Time: {:.2}s\n\
-                                 Stderr: {}",
-                                device.name,
-                                exec_response.returncode,
-                                duration.as_secs_f64(),
-                                &exec_response.stderr[..exec_response.stderr.len().min(500)]
-                            );
-                        }
-                        
-                        Ok(HttpAgentResponse {
-                            stdout: exec_response.stdout,
-                            stderr: exec_response.stderr,
-                            returncode: exec_response.returncode,
-                            success: exec_response.success,
-                            execution_time_ms: exec_response.execution_time_ms,
-                            device_id: device.id.clone(),
-                            device_name: device.name.clone(),
-                        })
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            "[HTTP Remote Exec] ❌ Failed to parse response: {}",
-                            e
-                        );
-                        Err(crate::AppError::Http(format!("Failed to parse response: {}", e)))
-                    }
+    tracing::info!(
+        "[HTTP Remote Exec] Request completed\n\
+         Attempts: {}\n\
+         Total Duration: {:.2}s\n\
+         Succeeded: {}",
+        retry_result.attempts,
+        duration.as_secs_f64(),
+        retry_result.succeeded
+    );
+    
+    let result = retry_result.result?;
+    
+    let status_code = result.status();
+    
+    if status_code.is_success() {
+        // Parse the response
+        match result.json::<ExecuteResponse>().await {
+            Ok(exec_response) => {
+                if exec_response.success {
+                    tracing::info!(
+                        "[HTTP Remote Exec] ✅ Command executed successfully\n\
+                         Device: {}\n\
+                         Return Code: {}\n\
+                         Execution Time: {:.2}s\n\
+                         Remote Execution Time: {}ms\n\
+                         Stdout Length: {} chars\n\
+                         Retry Attempts: {}",
+                        device_name,
+                        exec_response.returncode,
+                        duration.as_secs_f64(),
+                        exec_response.execution_time_ms,
+                        exec_response.stdout.len(),
+                        retry_result.attempts
+                    );
+                } else {
+                    tracing::error!(
+                        "[HTTP Remote Exec] ❌ Command failed\n\
+                         Device: {}\n\
+                         Return Code: {}\n\
+                         Execution Time: {:.2}s\n\
+                         Retry Attempts: {}\n\
+                         Stderr: {}",
+                        device_name,
+                        exec_response.returncode,
+                        duration.as_secs_f64(),
+                        retry_result.attempts,
+                        &exec_response.stderr[..exec_response.stderr.len().min(500)]
+                    );
                 }
-            } else {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                tracing::error!(
-                    "[HTTP Remote Exec] ❌ HTTP error {}\n\
-                     Device: {}\n\
-                     Error: {}",
-                    status_code,
-                    device.name,
-                    error_text
-                );
                 
-                Err(crate::AppError::Http(format!(
-                    "HTTP {} - {}",
-                    status_code,
-                    error_text
-                )))
+                Ok(HttpAgentResponse {
+                    stdout: exec_response.stdout,
+                    stderr: exec_response.stderr,
+                    returncode: exec_response.returncode,
+                    success: exec_response.success,
+                    execution_time_ms: exec_response.execution_time_ms,
+                    device_id,
+                    device_name,
+                })
+            }
+            Err(e) => {
+                tracing::error!(
+                    "[HTTP Remote Exec] ❌ Failed to parse response: {}",
+                    e
+                );
+                Err(crate::AppError::Http(format!("Failed to parse response: {}", e)))
             }
         }
-        Err(e) => {
-            tracing::error!(
-                "[HTTP Remote Exec] ❌ Request failed\n\
-                 Device: {}\n\
-                 Error: {}",
-                device.name,
-                e
-            );
-            
-            if e.is_timeout() {
-                Err(crate::AppError::Timeout(format!(
-                    "Request timeout after {}s",
-                    settings.remote_agent_timeout
-                )))
-            } else {
-                Err(crate::AppError::Http(format!("Request failed: {}", e)))
-            }
-        }
+    } else {
+        let error_text = result.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        tracing::error!(
+            "[HTTP Remote Exec] ❌ HTTP error {}\n\
+             Device: {}\n\
+             Error: {}",
+            status_code,
+            device_name,
+            error_text
+        );
+        
+        Err(crate::AppError::Http(format!(
+            "HTTP {} - {}",
+            status_code,
+            error_text
+        )))
     }
 }
 

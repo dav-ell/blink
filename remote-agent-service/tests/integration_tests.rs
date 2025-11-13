@@ -99,6 +99,7 @@ async fn create_test_app() -> (axum::Router, String) {
             working_dir,
             model,
             output_format,
+            None, // correlation_id
         ).await {
             Ok(result) => Ok(Json(json!({
                 "success": result.success,
