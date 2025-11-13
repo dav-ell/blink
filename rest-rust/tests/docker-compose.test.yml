@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  ssh-test-server:
+    image: linuxserver/openssh-server:latest
+    container_name: blink-ssh-test
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=testpass
+      - USER_NAME=testuser
+    ports:
+      - "2222:2222"
+    volumes:
+      - ./fixtures/test_cursor_agent.sh:/usr/local/bin/cursor-agent:ro
+    command: sh -c "chmod +x /usr/local/bin/cursor-agent && /init"
+    healthcheck:
+      test: ["CMD", "pgrep", "sshd"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
