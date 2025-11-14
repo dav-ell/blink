@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 @Deprecated('Use ChatRepository instead. Will be removed in a future version.')
 class ApiService {
   // Use Mac's local network IP for physical iOS devices, 127.0.0.1 for simulator
-  static const String baseUrl = 'http://localhost:8000';
+  static const String baseUrl = 'http://localhost:8067';
   
   final http.Client _client;
   

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-    db::get_cursor_db_connection,
+    db::{get_cursor_db_connection, cache_sync},
     utils::{extract_separated_content, parse_timestamp},
     AppState, Result,
 };
@@ -320,6 +320,105 @@ pub async fn get_chat_messages(
         }
         
         Ok::<_, crate::AppError>(result)
+    })
+    .await
+    .map_err(|e| crate::AppError::Internal(format!("Task join error: {}", e)))??;
+    
+    Ok(Json(result))
+}
+
+/// Get cache consistency status
+pub async fn get_cache_status(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>> {
+    let settings = state.settings.clone();
+    
+    let status = tokio::task::spawn_blocking(move || {
+        let conn = get_cursor_db_connection(&settings)?;
+        let status = cache_sync::verify_cache_consistency(&conn)?;
+        Ok::<_, crate::AppError>(status)
+    })
+    .await
+    .map_err(|e| crate::AppError::Internal(format!("Task join error: {}", e)))??;
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "cache_status": {
+            "composer_data_count": status.composer_data_count,
+            "cache_entry_count": status.cache_entry_count,
+            "is_consistent": status.is_consistent,
+            "missing_cache_entries_count": status.missing_cache_entries.len(),
+            "orphaned_cache_entries_count": status.orphaned_cache_entries.len(),
+            "missing_cache_entries": status.missing_cache_entries,
+            "orphaned_cache_entries": status.orphaned_cache_entries,
+        }
+    })))
+}
+
+/// Verify and fix cache consistency
+pub async fn verify_and_fix_cache(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>> {
+    let settings = state.settings.clone();
+    
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = get_cursor_db_connection(&settings)?;
+        
+        // Get initial status
+        let initial_status = cache_sync::verify_cache_consistency(&conn)?;
+        
+        // Sync missing entries
+        let synced_chats = cache_sync::sync_missing_cache_entries(&conn)?;
+        
+        // Clean orphaned entries
+        let cleaned_entries = cache_sync::clean_orphaned_cache_entries(&conn)?;
+        
+        // Get final status
+        let final_status = cache_sync::verify_cache_consistency(&conn)?;
+        
+        Ok::<_, crate::AppError>(json!({
+            "initial_status": {
+                "is_consistent": initial_status.is_consistent,
+                "missing_count": initial_status.missing_cache_entries.len(),
+                "orphaned_count": initial_status.orphaned_cache_entries.len(),
+            },
+            "actions_taken": {
+                "synced_chats": synced_chats,
+                "cleaned_entries": cleaned_entries,
+            },
+            "final_status": {
+                "is_consistent": final_status.is_consistent,
+                "composer_data_count": final_status.composer_data_count,
+                "cache_entry_count": final_status.cache_entry_count,
+            }
+        }))
+    })
+    .await
+    .map_err(|e| crate::AppError::Internal(format!("Task join error: {}", e)))??;
+    
+    Ok(Json(result))
+}
+
+/// Sync cache for a specific chat
+pub async fn sync_chat_cache(
+    State(state): State<Arc<AppState>>,
+    Path(chat_id): Path<String>,
+) -> Result<Json<Value>> {
+    let settings = state.settings.clone();
+    
+    let result = tokio::task::spawn_blocking(move || {
+        let conn = get_cursor_db_connection(&settings)?;
+        let success = cache_sync::sync_chat_cache(&conn, &chat_id)?;
+        
+        if !success {
+            return Err(crate::AppError::NotFound(format!("Chat {} not found", chat_id)));
+        }
+        
+        Ok::<_, crate::AppError>(json!({
+            "status": "ok",
+            "chat_id": chat_id,
+            "message": "Cache entry created/updated successfully"
+        }))
     })
     .await
     .map_err(|e| crate::AppError::Internal(format!("Task join error: {}", e)))??;

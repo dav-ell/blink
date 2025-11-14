@@ -2,6 +2,62 @@ use crate::error::Result;
 use rusqlite::{Connection, Transaction};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use uuid::Uuid;
+
+/// Create ItemTable cache entry for a chat
+/// This is required for Cursor IDE to recognize the chat and not delete it on close
+fn create_item_table_cache_entry(
+    conn: &Connection,
+    chat_id: &str,
+) -> Result<()> {
+    let key = format!("workbench.panel.composerChatViewPane.{}.hidden", chat_id);
+    
+    // Generate a view ID (can be the same as chat_id or a new UUID)
+    let view_id = Uuid::new_v4().to_string();
+    
+    // Create the cache entry value
+    let cache_value = json!([{
+        "id": format!("workbench.panel.aichat.view.{}", view_id),
+        "isHidden": false
+    }]);
+    
+    let value_str = cache_value.to_string();
+    
+    // Insert into ItemTable
+    conn.execute(
+        "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)",
+        [&key, &value_str],
+    )?;
+    
+    Ok(())
+}
+
+/// Create ItemTable cache entry within a transaction
+fn create_item_table_cache_entry_tx(
+    tx: &Transaction,
+    chat_id: &str,
+) -> Result<()> {
+    let key = format!("workbench.panel.composerChatViewPane.{}.hidden", chat_id);
+    
+    // Generate a view ID (can be the same as chat_id or a new UUID)
+    let view_id = Uuid::new_v4().to_string();
+    
+    // Create the cache entry value
+    let cache_value = json!([{
+        "id": format!("workbench.panel.aichat.view.{}", view_id),
+        "isHidden": false
+    }]);
+    
+    let value_str = cache_value.to_string();
+    
+    // Insert into ItemTable
+    tx.execute(
+        "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)",
+        [&key, &value_str],
+    )?;
+    
+    Ok(())
+}
 
 /// Ensure a chat exists in the database, creating it if necessary
 pub fn ensure_chat_exists(
@@ -63,6 +119,9 @@ pub fn ensure_chat_exists(
                 "INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)",
                 [&key, &metadata_str],
             )?;
+            
+            // Create ItemTable cache entry to prevent deletion on Cursor IDE close
+            create_item_table_cache_entry(conn, chat_id)?;
             
             Ok((true, metadata))
         }
@@ -128,6 +187,9 @@ pub fn ensure_chat_exists_tx(
                 "INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)",
                 [&key, &metadata_str],
             )?;
+            
+            // Create ItemTable cache entry to prevent deletion on Cursor IDE close
+            create_item_table_cache_entry_tx(tx, chat_id)?;
             
             Ok((true, metadata))
         }
@@ -243,7 +305,7 @@ pub fn persist_conversation_turn(
 ) -> Result<()> {
     let tx = conn.transaction()?;
     
-    // Ensure chat exists
+    // Ensure chat exists (this also creates ItemTable cache entry if needed)
     ensure_chat_exists_tx(&tx, chat_id)?;
     
     // Save user message

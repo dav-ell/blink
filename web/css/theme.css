@@ -1,0 +1,114 @@
+/* Theme Variables */
+:root {
+    /* Primary Colors */
+    --color-primary: #2563EB;
+    --color-primary-light: #60A5FA;
+    --color-primary-dark: #1E40AF;
+    
+    /* Secondary Colors */
+    --color-secondary: #8B5CF6;
+    --color-secondary-light: #A78BFA;
+    --color-secondary-dark: #6D28D9;
+    
+    /* Background Colors */
+    --color-background: #F8FAFC;
+    --color-surface: #FFFFFF;
+    --color-surface-light: #F1F5F9;
+    --color-surface-hover: #E2E8F0;
+    
+    /* Text Colors */
+    --color-text-primary: #1E293B;
+    --color-text-secondary: #64748B;
+    --color-text-tertiary: #94A3B8;
+    
+    /* Message Colors */
+    --color-user-message-start: #2563EB;
+    --color-user-message-end: #60A5FA;
+    --color-assistant-message-start: #F1F5F9;
+    --color-assistant-message-end: #E2E8F0;
+    
+    /* Content Type Colors */
+    --color-code: #059669;
+    --color-todo: #EA580C;
+    --color-tool-call: #7C3AED;
+    --color-thinking: #0891B2;
+    
+    /* Status Colors */
+    --color-active: #10B981;
+    --color-inactive: #F59E0B;
+    --color-completed: #3B82F6;
+    --color-archived: #6B7280;
+    --color-error: #EF4444;
+    --color-success: #10B981;
+    
+    /* Border Colors */
+    --color-border: #E2E8F0;
+    --color-border-light: #F1F5F9;
+    
+    /* Shadow Colors */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    
+    /* Border Radius */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    
+    /* Transitions */
+    --transition-fast: 150ms ease-in-out;
+    --transition-medium: 250ms ease-in-out;
+    --transition-slow: 350ms ease-in-out;
+}
+
+/* Dark Theme */
+[data-theme="dark"] {
+    /* Background Colors */
+    --color-background: #0F172A;
+    --color-surface: #1E293B;
+    --color-surface-light: #334155;
+    --color-surface-hover: #475569;
+    
+    /* Text Colors */
+    --color-text-primary: #F1F5F9;
+    --color-text-secondary: #CBD5E1;
+    --color-text-tertiary: #94A3B8;
+    
+    /* Message Colors */
+    --color-user-message-start: #3B82F6;
+    --color-user-message-end: #60A5FA;
+    --color-assistant-message-start: #334155;
+    --color-assistant-message-end: #475569;
+    
+    /* Border Colors */
+    --color-border: #334155;
+    --color-border-light: #475569;
+    
+    /* Shadow Colors */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+/* Smooth theme transitions */
+* {
+    transition: background-color var(--transition-medium),
+                border-color var(--transition-medium),
+                color var(--transition-medium);
+}
+
+/* Prevent transition on page load */
+.preload * {
+    transition: none !important;
+}
+

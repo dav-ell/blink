@@ -10,7 +10,7 @@ use reqwest::Client;
 use serde_json::{json, Value};
 use std::error::Error;
 
-const DEFAULT_API_URL: &str = "http://localhost:8000";
+const DEFAULT_API_URL: &str = "http://localhost:8067";
 
 #[derive(Parser)]
 #[command(name = "blink")]

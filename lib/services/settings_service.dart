@@ -2,7 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsService {
   static const String _apiEndpointKey = 'api_endpoint';
-  static const String _defaultEndpoint = 'http://localhost:8000';
+  static const String _defaultEndpoint = 'http://localhost:8067';
 
   Future<String> getApiEndpoint() async {
     final prefs = await SharedPreferences.getInstance();

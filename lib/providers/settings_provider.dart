@@ -3,7 +3,7 @@ import '../services/settings_service.dart';
 
 class SettingsProvider with ChangeNotifier {
   final SettingsService _settingsService = SettingsService();
-  String _apiEndpoint = 'http://localhost:8000';
+  String _apiEndpoint = 'http://localhost:8067';
   bool _isLoading = true;
 
   String get apiEndpoint => _apiEndpoint;

@@ -2,7 +2,7 @@
 class AppConstants {
   // API Configuration
   // Use localhost for desktop, or set to your Mac's IP for mobile devices
-  static const String apiBaseUrl = 'http://localhost:8000';
+  static const String apiBaseUrl = 'http://localhost:8067';
   static const String cursorApiBaseUrl = 'https://api2.cursor.sh';
   
   // Timeouts

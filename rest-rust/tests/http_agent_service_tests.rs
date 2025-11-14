@@ -31,7 +31,7 @@ fn create_test_settings() -> Settings {
         cursor_agent_path: PathBuf::from("cursor-agent"),
         cursor_agent_timeout: 120,
         api_host: "0.0.0.0".to_string(),
-        api_port: 8000,
+        api_port: 8067,
         api_reload: false,
         job_cleanup_max_age_hours: 1,
         job_cleanup_interval_minutes: 30,

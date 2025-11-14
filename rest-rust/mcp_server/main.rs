@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::error::Error;
 use reqwest::Client;
 
-const API_BASE_URL: &str = "http://localhost:8000";
+const API_BASE_URL: &str = "http://localhost:8067";
 
 struct BlinkApiClient {
     client: Client,

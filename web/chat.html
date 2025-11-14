@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - Blink</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body class="preload">
+    <div class="chat-detail-container">
+        <!-- Chat Header -->
+        <div class="chat-header">
+            <div class="chat-header-left">
+                <button class="btn-icon" id="backBtn" aria-label="Back to chats">
+                    <span>←</span>
+                </button>
+                <div class="chat-header-info">
+                    <div class="chat-title" id="chatTitle">Loading...</div>
+                    <div class="chat-stats" id="chatStats">
+                        <span id="messageCount">0 messages</span>
+                        <span id="linesChanged"></span>
+                        <span id="lastUpdated"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="chat-header-right">
+                <button class="btn-icon" id="refreshBtn" aria-label="Refresh messages">
+                    <span>🔄</span>
+                </button>
+                <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Messages Container -->
+        <div class="messages-container" id="messagesContainer">
+            <div class="messages-list" id="messagesList">
+                <!-- Loading state -->
+                <div id="loadingState">
+                    <div style="padding: 24px; text-align: center;">
+                        <div class="spinner" style="margin: 0 auto;"></div>
+                        <div style="margin-top: 16px; color: var(--color-text-secondary);">
+                            Loading messages...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Empty state (hidden by default) -->
+                <div id="emptyState" class="empty-state hidden">
+                    <div class="empty-state-icon">💬</div>
+                    <div class="empty-state-title">No messages yet</div>
+                    <div class="empty-state-description">
+                        Send a message to start the conversation!
+                    </div>
+                </div>
+
+                <!-- Error state (hidden by default) -->
+                <div id="errorState" class="hidden">
+                    <div class="error-message">
+                        <span>⚠️</span>
+                        <div>
+                            <div><strong>Failed to load messages</strong></div>
+                            <div id="errorMessage"></div>
+                            <button class="btn btn-secondary" id="retryBtn" style="margin-top: 8px;">
+                                Retry
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Message Input Bar -->
+        <div class="message-input-bar">
+            <textarea 
+                class="message-input" 
+                id="messageInput"
+                placeholder="Type your message..."
+                rows="1"
+            ></textarea>
+            <button class="send-btn" id="sendBtn" aria-label="Send message">
+                <span style="font-size: 20px;">⬆️</span>
+            </button>
+        </div>
+    </div>
+
+    <script type="module" src="js/pages/chatDetail.js"></script>
+</body>
+</html>
+

@@ -75,6 +75,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/chats", get(api::chats::list_chats))
         .route("/chats/:chat_id", get(api::chats::get_chat_messages))
         .route("/chats/:chat_id/metadata", get(api::chats::get_chat_metadata))
+        .route("/chats/:chat_id/sync-cache", post(api::chats::sync_chat_cache))
+        // Cache management endpoints
+        .route("/cache/status", get(api::chats::get_cache_status))
+        .route("/cache/verify", post(api::chats::verify_and_fix_cache))
         // Agent endpoints
         .route("/agent/models", get(api::agent::get_models))
         .route("/agent/create-chat", post(api::agent::create_chat))

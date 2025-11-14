@@ -65,7 +65,7 @@ impl Settings {
             .set_default("cursor_agent_path", format!("{}/.local/bin/cursor-agent", home))?
             .set_default("cursor_agent_timeout", 90)?
             .set_default("api_host", "0.0.0.0")?
-            .set_default("api_port", 8000)?
+            .set_default("api_port", 8067)?
             .set_default("api_reload", false)?
             .set_default("job_cleanup_max_age_hours", 1)?
             .set_default("job_cleanup_interval_minutes", 30)?

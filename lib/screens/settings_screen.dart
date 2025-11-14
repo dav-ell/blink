@@ -112,7 +112,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           TextFormField(
                             controller: _endpointController,
                             decoration: InputDecoration(
-                              hintText: 'http://localhost:8000',
+                              hintText: 'http://localhost:8067',
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
@@ -142,13 +142,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           const SizedBox(height: 4),
                           _buildExampleChip(
-                            'http://localhost:8000',
+                            'http://localhost:8067',
                             'Mac/Local',
                             isDark,
                           ),
                           const SizedBox(height: 4),
                           _buildExampleChip(
-                            'http://192.168.1.120:8000',
+                            'http://192.168.1.120:8067',
                             'Phone/Network',
                             isDark,
                           ),
