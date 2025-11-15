@@ -96,12 +96,15 @@ async fn main() -> anyhow::Result<()> {
         .expect("Failed to create HTTP client");
 
     // Create shared state
+    let task_handles = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+    
     let state = Arc::new(AppState {
         settings: settings.clone(),
         job_pool: internal_pool,
         metrics: blink_api::MetricsCollector::new(),
         circuit_breaker: blink_api::middleware::DeviceCircuitBreaker::new(circuit_breaker_config),
         http_client,
+        task_handles,
     });
 
     // Configure CORS
@@ -152,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
         // Job endpoints
         .route("/jobs/:job_id", get(api::jobs::get_job_details))
         .route("/jobs/:job_id/status", get(api::jobs::get_job_status))
+        .route("/jobs/:job_id/cancel", post(api::jobs::cancel_job))
         .route("/chats/:chat_id/jobs", get(api::jobs::get_chat_jobs_list))
         // Device endpoints
         .route("/devices", post(api::devices::create_device))

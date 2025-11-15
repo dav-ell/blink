@@ -13,6 +13,12 @@ pub use utils::{MetricsCollector, RequestContext};
 
 use reqwest::Client;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
+
+pub type TaskHandles = Arc<Mutex<HashMap<String, JoinHandle<()>>>>;
 
 /// Application state shared across handlers
 pub struct AppState {
@@ -21,4 +27,5 @@ pub struct AppState {
     pub metrics: MetricsCollector,
     pub circuit_breaker: middleware::DeviceCircuitBreaker,
     pub http_client: Client,
+    pub task_handles: TaskHandles,
 }

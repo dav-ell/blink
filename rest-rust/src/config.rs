@@ -72,7 +72,7 @@ impl Settings {
                 "cursor_agent_path",
                 format!("{}/.local/bin/cursor-agent", home),
             )?
-            .set_default("cursor_agent_timeout", 90)?
+            .set_default("cursor_agent_timeout", 600)?  // 10 minutes
             .set_default("api_host", "0.0.0.0")?
             .set_default("api_port", 8067)?
             .set_default("api_reload", false)?
@@ -82,7 +82,7 @@ impl Settings {
                 "device_db_path",
                 format!("{}/.cursor_agent_devices.db", home),
             )?
-            .set_default("remote_agent_timeout", 120)?
+            .set_default("remote_agent_timeout", 600)?  // 10 minutes
             .set_default("remote_agent_connect_timeout", 10)?
             .set_default("default_cursor_agent_path", "~/.local/bin/cursor-agent")?
             // SSH configuration

@@ -40,7 +40,7 @@ pub async fn create_agent_prompt_job(
     let model = job.model.clone().unwrap_or_else(|| "sonnet-4.5-thinking".to_string());
     
     // Spawn background task to execute the job
-    tokio::spawn(execute_job(
+    let handle = tokio::spawn(execute_job(
         state.clone(),
         job_id.clone(),
         chat_id.clone(),
@@ -48,6 +48,12 @@ pub async fn create_agent_prompt_job(
         model,
         request.output_format.clone(),
     ));
+
+    // Store the handle for potential cancellation
+    {
+        let mut handles = state.task_handles.lock().await;
+        handles.insert(job_id.clone(), handle);
+    }
 
     Ok(Json(JobCreateResponse {
         status: "accepted".to_string(),
@@ -71,6 +77,28 @@ async fn execute_job(
     if let Err(e) = update_job_status(&state.job_pool, &job_id, "processing").await {
         tracing::error!("Failed to update job status to processing: {}", e);
         return;
+    }
+
+    // Check if job was cancelled before we started
+    match get_job(&state.job_pool, &job_id).await {
+        Ok(Some(job)) if job.status.as_str() == "cancelled" => {
+            tracing::info!("Job {} was cancelled before execution started", job_id);
+            // Clean up task handle
+            {
+                let mut handles = state.task_handles.lock().await;
+                handles.remove(&job_id);
+            }
+            return;
+        }
+        Ok(None) => {
+            tracing::error!("Job {} not found", job_id);
+            return;
+        }
+        Err(e) => {
+            tracing::error!("Failed to get job: {}", e);
+            return;
+        }
+        _ => {} // Job exists and is not cancelled, continue
     }
 
     // Check if this is a remote chat
@@ -290,6 +318,12 @@ async fn execute_job(
             }
         }
     }
+    
+    // Clean up task handle when job finishes
+    {
+        let mut handles = state.task_handles.lock().await;
+        handles.remove(&job_id);
+    }
 }
 
 /// Get job details
@@ -318,6 +352,42 @@ pub async fn get_job_status(
         "status": job.status,
         "created_at": job.created_at,
         "elapsed_seconds": job.elapsed_seconds(),
+    })))
+}
+
+/// Cancel a running job
+pub async fn cancel_job(
+    State(state): State<Arc<AppState>>,
+    Path(job_id): Path<String>,
+) -> Result<Json<Value>> {
+    tracing::info!("Cancelling job: {}", job_id);
+    
+    // Check if job exists
+    let job = get_job(&state.job_pool, &job_id).await?
+        .ok_or_else(|| crate::AppError::NotFound(format!("Job {} not found", job_id)))?;
+    
+    // Check if job is cancellable (not already completed/failed)
+    if matches!(job.status.as_str(), "completed" | "failed" | "cancelled") {
+        return Err(crate::AppError::BadRequest(format!(
+            "Cannot cancel job with status: {}",
+            job.status.as_str()
+        )));
+    }
+    
+    // Update job status to cancelled
+    update_job_status(&state.job_pool, &job_id, "cancelled").await?;
+    
+    // Abort the task if it's running
+    let mut handles = state.task_handles.lock().await;
+    if let Some(handle) = handles.remove(&job_id) {
+        handle.abort();
+        tracing::info!("Aborted running task for job: {}", job_id);
+    }
+    
+    Ok(Json(json!({
+        "status": "cancelled",
+        "job_id": job_id,
+        "message": "Job cancelled successfully"
     })))
 }
 

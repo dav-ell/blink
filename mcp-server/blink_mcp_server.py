@@ -104,6 +104,10 @@ class BlinkApiClient:
             
             await asyncio.sleep(2)
     
+    async def cancel_job(self, job_id: str) -> Dict[str, Any]:
+        """Cancel a running job"""
+        return await self.post(f"/jobs/{job_id}/cancel", {})
+    
     # Context Management
     
     async def get_chat_messages(self, chat_id: str, limit: Optional[int] = None) -> Dict[str, Any]:
@@ -285,6 +289,20 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
                     "job_id": {
                         "type": "string",
                         "description": "Job UUID (from send_remote_task)"
+                    }
+                },
+                "required": ["job_id"]
+            }
+        },
+        {
+            "name": "cancel_job",
+            "description": "Cancel a running local or remote agent job. The job will be aborted and marked as cancelled. Only works for jobs that are pending or processing.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job UUID to cancel (from send_local_task or send_remote_task)"
                     }
                 },
                 "required": ["job_id"]
@@ -572,6 +590,19 @@ async def handle_tool_call(client: BlinkApiClient, name: str, arguments: Dict[st
             )
         else:
             return f"❓ Job status: {status}"
+    
+    elif name == "cancel_job":
+        job_id = arguments.get("job_id")
+        if not job_id:
+            raise ValueError("Missing job_id")
+        
+        result = await client.cancel_job(job_id)
+        return (
+            f"🛑 **Job Cancelled**\n\n"
+            f"Job ID: {job_id}\n"
+            f"Status: {result.get('status', 'cancelled')}\n"
+            f"Message: {result.get('message', 'Job cancelled successfully')}"
+        )
     
     elif name == "get_chat_history":
         chat_id = arguments.get("chat_id")

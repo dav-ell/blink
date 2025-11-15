@@ -26,7 +26,8 @@ pub async fn root(State(state): State<Arc<AppState>>) -> Json<Value> {
             "GET /chats/{chat_id}/metadata": "Get metadata for a specific chat",
             "POST /chats/{chat_id}/agent-prompt": "Send prompt to cursor-agent",
             "POST /agent/create-chat": "Create new cursor-agent chat",
-            "GET /agent/models": "List available AI models"
+            "GET /agent/models": "List available AI models",
+            "POST /jobs/{job_id}/cancel": "Cancel a running job"
         },
         "features": {
             "rust_powered": "High performance Rust implementation",
