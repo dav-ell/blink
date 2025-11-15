@@ -1,0 +1,131 @@
+{
+  "deployment_name": "Example Multi-Service Deployment",
+  "description": "Template for defining deployment tasks with dependencies",
+  "tasks": [
+    {
+      "id": "prereq_check",
+      "name": "System Prerequisites Check",
+      "duration_minutes": 1.0,
+      "dependencies": [],
+      "resources": ["disk:read"],
+      "commands": [
+        "docker --version",
+        "git --version",
+        "python3 --version"
+      ]
+    },
+    {
+      "id": "install_deps",
+      "name": "Install System Dependencies",
+      "duration_minutes": 3.0,
+      "dependencies": [],
+      "resources": ["network", "disk:write"],
+      "commands": [
+        "sudo apt update",
+        "sudo apt install -y docker-compose"
+      ]
+    },
+    {
+      "id": "clone_repo",
+      "name": "Clone Application Repository",
+      "duration_minutes": 0.5,
+      "dependencies": [],
+      "resources": ["network", "disk:write"],
+      "commands": [
+        "git clone <repo_url> ~/app"
+      ]
+    },
+    {
+      "id": "download_model_a",
+      "name": "Download ML Model A",
+      "duration_minutes": 5.0,
+      "dependencies": ["clone_repo"],
+      "resources": ["network", "disk:write"],
+      "commands": [
+        "cd ~/app && ./scripts/download_model_a.sh"
+      ]
+    },
+    {
+      "id": "download_model_b",
+      "name": "Download ML Model B",
+      "duration_minutes": 5.0,
+      "dependencies": ["clone_repo"],
+      "resources": ["network", "disk:write"],
+      "commands": [
+        "cd ~/app && ./scripts/download_model_b.sh"
+      ]
+    },
+    {
+      "id": "build_backend",
+      "name": "Build Backend Service",
+      "duration_minutes": 4.0,
+      "dependencies": ["clone_repo", "install_deps"],
+      "resources": ["cpu", "disk:write"],
+      "commands": [
+        "cd ~/app/backend",
+        "docker build -t backend:latest ."
+      ]
+    },
+    {
+      "id": "build_frontend",
+      "name": "Build Frontend Service",
+      "duration_minutes": 8.0,
+      "dependencies": ["clone_repo", "install_deps"],
+      "resources": ["cpu", "disk:write"],
+      "commands": [
+        "cd ~/app/frontend",
+        "docker build -t frontend:latest ."
+      ]
+    },
+    {
+      "id": "start_backend",
+      "name": "Start Backend Service",
+      "duration_minutes": 2.0,
+      "dependencies": ["build_backend", "download_model_a"],
+      "resources": ["gpu:0", "network", "port:8000"],
+      "commands": [
+        "docker run -d --name backend --gpus '\"device=0\"' -p 8000:8000 backend:latest"
+      ]
+    },
+    {
+      "id": "start_ml_service",
+      "name": "Start ML Inference Service",
+      "duration_minutes": 2.0,
+      "dependencies": ["download_model_b"],
+      "resources": ["gpu:1", "network", "port:8001"],
+      "commands": [
+        "cd ~/app/ml_service",
+        "CUDA_VISIBLE_DEVICES=1 python3 serve.py --port 8001 &"
+      ]
+    },
+    {
+      "id": "start_frontend",
+      "name": "Start Frontend Service",
+      "duration_minutes": 1.0,
+      "dependencies": ["build_frontend", "start_backend"],
+      "resources": ["network", "port:3000"],
+      "commands": [
+        "docker run -d --name frontend -p 3000:3000 frontend:latest"
+      ]
+    },
+    {
+      "id": "integration_tests",
+      "name": "Run Integration Tests",
+      "duration_minutes": 3.0,
+      "dependencies": ["start_backend", "start_ml_service", "start_frontend"],
+      "resources": ["network"],
+      "commands": [
+        "cd ~/app/tests",
+        "python3 -m pytest integration/"
+      ]
+    }
+  ],
+  "notes": [
+    "This is a template - customize for your specific deployment",
+    "Add actual repo URLs, paths, and commands",
+    "Adjust duration estimates based on your infrastructure",
+    "Use task_analyzer.py to generate optimal execution plan"
+  ],
+  "usage": "python3 -c \"import json; from task_analyzer import Task, TaskAnalyzer; data=json.load(open('example_deployment.json')); tasks=[Task(t['id'], t['name'], t['duration_minutes'], t['dependencies'], t['resources']) for t in data['tasks']]; analyzer=TaskAnalyzer(tasks); analyzer.create_execution_plan(); analyzer.print_plan()\""
+}
+
