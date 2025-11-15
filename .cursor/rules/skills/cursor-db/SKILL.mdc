@@ -19,6 +19,14 @@ Specialized knowledge of Cursor IDE's internal SQLite database structure, includ
 
 ### Database Location
 
+**⚠️ CRITICAL: Two Different Storage Formats**
+
+Cursor uses **two completely different database formats** depending on whether you're using the GUI IDE or the CLI agent:
+
+#### 1. Cursor IDE Format (GUI)
+
+Centralized SQLite database with all chats:
+
 **macOS:**
 ```
 ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb
@@ -33,6 +41,50 @@ Specialized knowledge of Cursor IDE's internal SQLite database structure, includ
 ```
 %APPDATA%\Cursor\User\globalStorage\state.vscdb
 ```
+
+**Storage Pattern:**
+- Single database file for all chats
+- Uses `cursorDiskKV` table with key-value pattern
+- Keys: `composerData:{chat_id}` and `bubbleId:{chat_id}:{bubble_id}`
+
+#### 2. cursor-agent CLI Format (Headless)
+
+**⚠️ COMPLETELY DIFFERENT:** cursor-agent CLI uses per-chat individual databases:
+
+**Location Pattern:**
+```
+~/.cursor/chats/<user_hash>/<chat_id>/store.db
+```
+
+**Real Example:**
+```
+~/.cursor/chats/cb6534c3ffe71d2f16e8388bde280295/e2ae2741-6f1c-4df9-b396-cccfc6766a1d/store.db
+```
+
+**Storage Pattern:**
+- Individual SQLite database per chat
+- Separate directory structure with user hash
+- Different schema than Cursor IDE (unknown schema at this time)
+- Messages NOT stored in centralized `state.vscdb`
+
+**Key Differences:**
+
+| Feature | Cursor IDE | cursor-agent CLI |
+|---------|-----------|------------------|
+| Database per chat | No (one DB for all) | Yes (individual DB per chat) |
+| Path pattern | `globalStorage/state.vscdb` | `~/.cursor/chats/<hash>/<chat_id>/` |
+| Schema | Known (cursorDiskKV) | Unknown/Different |
+| Discovery | Direct SQL query | Directory traversal |
+| Key format | `composerData:`, `bubbleId:` | Unknown |
+
+**Important for Remote Operations:**
+
+When implementing remote chat functionality:
+1. **Local Cursor IDE** (your machine) uses `state.vscdb`
+2. **Remote cursor-agent** (headless machines) uses `~/.cursor/chats/` structure
+3. Cannot directly query remote chat messages using Cursor IDE schema
+4. Need different code path for reading cursor-agent format
+5. Fallback to local DB if remote unavailable recommended
 
 ### Important: Workspace vs Global Storage
 
@@ -54,8 +106,10 @@ See `rest/WORKSPACE_DATABASE_ANALYSIS.md` for detailed investigation results.
 
 ### Quick Access
 
+#### For Cursor IDE (GUI) Databases
+
 ```bash
-# Open database
+# Open Cursor IDE database
 sqlite3 ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb
 
 # List all chats
@@ -65,9 +119,29 @@ SELECT key FROM cursorDiskKV WHERE key LIKE 'composerData:%';
 SELECT key FROM cursorDiskKV WHERE key LIKE 'bubbleId:YOUR_CHAT_ID:%';
 ```
 
+#### For cursor-agent CLI Databases
+
+```bash
+# Find all cursor-agent chats on a system
+find ~/.cursor/chats -name "store.db" -type f
+
+# List chat directories
+ls -la ~/.cursor/chats/*/
+
+# Access a specific chat's database
+sqlite3 ~/.cursor/chats/<user_hash>/<chat_id>/store.db
+
+# Example: Access chat e2ae2741...
+sqlite3 ~/.cursor/chats/cb6534c3ffe71d2f16e8388bde280295/e2ae2741-6f1c-4df9-b396-cccfc6766a1d/store.db
+```
+
+**Note:** cursor-agent database schema is different from Cursor IDE. Use directory traversal to discover chats, not SQL queries.
+
 ## Database Schema
 
-### Tables
+### Cursor IDE Schema (state.vscdb)
+
+**Tables:**
 
 **cursorDiskKV** - Main key-value store:
 ```sql
@@ -103,6 +177,127 @@ bubbleId:3f1a6a8c-58d1-4fbe-81f7-1ad946d9c84e:7b2c8d9e-4f3a-11ec-9bbc-0242ac1300
 - Values stored as BLOB (binary)
 - Content is JSON encoded as UTF-8
 - Parse with: `json.loads(value_blob)`
+
+### cursor-agent CLI Schema (store.db)
+
+**✅ SCHEMA DISCOVERED** (As of November 2024)
+
+The cursor-agent CLI's `store.db` format has been reverse-engineered:
+
+**Basic Info:**
+- **Format:** SQLite 3.x database with WAL (Write-Ahead Logging)
+- **Location:** `~/.cursor/chats/<user_hash>/<chat_id>/store.db`
+- **Additional files:** `store.db-shm`, `store.db-wal` (WAL mode)
+- **Typical size:** 4KB base + WAL file (can be 200KB+ with active changes)
+
+**Tables:**
+
+```sql
+CREATE TABLE meta (
+    key TEXT PRIMARY KEY,
+    value TEXT              -- Hex-encoded JSON string
+);
+
+CREATE TABLE blobs (
+    id TEXT PRIMARY KEY,    -- SHA-256 hash (64 hex characters)
+    data BLOB               -- Binary data (protobuf format)
+);
+```
+
+**Meta Table Structure:**
+
+Stores chat metadata as hex-encoded JSON with single key "0":
+
+```json
+{
+  "agentId": "chat-id-uuid",
+  "latestRootBlobId": "sha256-hash-of-latest-state",
+  "name": "Chat Name",
+  "mode": "auto-run",
+  "createdAt": 1763157138724
+}
+```
+
+**Fields:**
+- `agentId`: The chat UUID (matches directory name)
+- `latestRootBlobId`: Pointer to most recent blob (content hash)
+- `name`: Display name of the chat
+- `mode`: Execution mode (`"auto-run"`, etc.)
+- `createdAt`: Unix timestamp in milliseconds
+
+**Blobs Table Structure:**
+
+Stores conversation data as content-addressed blobs:
+
+- **ID:** SHA-256 hash of the blob content (64 hex characters)
+- **Data:** Binary protobuf-encoded message/state data
+- **Size:** Varies from ~44 bytes to ~13KB per blob
+- **Count:** Typically 10-20 blobs per chat
+
+**Example Query:**
+```bash
+# Get chat metadata
+sqlite3 store.db "SELECT key, value FROM meta" | \
+  while IFS='|' read key value; do 
+    echo "$value" | xxd -r -p
+  done
+
+# Count messages/blobs
+sqlite3 store.db "SELECT COUNT(*) FROM blobs"
+
+# List blob IDs
+sqlite3 store.db "SELECT id, length(data) FROM blobs ORDER BY id"
+```
+
+**Implications for Remote Operations:**
+1. ✅ Schema is now known (meta + blobs tables)
+2. ⚠️ Blob data is protobuf-encoded (not plain JSON)
+3. ⚠️ Need protobuf parser to decode message contents
+4. ✅ Can read metadata easily (hex-decoded JSON)
+5. ✅ Can count messages (`SELECT COUNT(*) FROM blobs`)
+6. ⚠️ Cannot extract full message text without protobuf schema
+7. 💡 Consider implementing fallback to local Cursor IDE DB
+
+**Key Differences from Cursor IDE:**
+
+| Feature | Cursor IDE | cursor-agent |
+|---------|-----------|--------------|
+| Storage | Centralized DB | Per-chat DB |
+| Message format | JSON in BLOB | Protobuf in BLOB |
+| Metadata | Embedded in composerData | Separate meta table |
+| Message IDs | UUID-based | SHA-256 content hash |
+| Decoding | Direct JSON parse | Requires protobuf |
+
+**Discovery Pattern:**
+```bash
+# Find all cursor-agent chats
+find ~/.cursor/chats -type d -mindepth 2 -maxdepth 2
+
+# Example output:
+# ~/.cursor/chats/cb6534c3ffe71d2f16e8388bde280295/e2ae2741-6f1c-4df9-b396-cccfc6766a1d
+# ~/.cursor/chats/d42b9c57d24cf5db3bd8d332dc35437f/test-93E18D9C-F49F-47F8-85A9-795704BA25DD
+```
+
+**Chat ID Extraction:**
+```bash
+# Extract chat IDs from directory structure
+find ~/.cursor/chats -type d -mindepth 2 -maxdepth 2 | \
+  awk -F/ '{print $NF}'
+```
+
+**Quick Chat Info:**
+```bash
+# Get chat metadata for a specific chat
+CHAT_ID="e2ae2741-6f1c-4df9-b396-cccfc6766a1d"
+CHAT_DIR=$(find ~/.cursor/chats -type d -name "$CHAT_ID" | head -1)
+
+# Extract metadata
+sqlite3 "$CHAT_DIR/store.db" "SELECT value FROM meta WHERE key='0'" | \
+  xxd -r -p | python3 -m json.tool
+
+# Count messages
+sqlite3 "$CHAT_DIR/store.db" "SELECT COUNT(*) as message_count FROM blobs"
+```
 
 ## Complete Data Structures
 
@@ -524,6 +719,296 @@ def ensure_chat_exists(chat_id: str, cursor):
 - Before sending first message to new chat
 - In REST API endpoints that accept chat_id parameter
 - After manual chat ID generation
+
+## Remote Operations & cursor-agent Storage
+
+### Challenge: Two Different Storage Systems
+
+When building remote chat functionality (e.g., executing cursor-agent on remote machines), you encounter a critical mismatch:
+
+**Local System (Web UI/IDE):**
+- Runs Cursor IDE with GUI
+- Uses `state.vscdb` centralized database
+- All chats in one place
+- Well-documented schema
+
+**Remote Systems (Headless Execution):**
+- Runs `cursor-agent` CLI only
+- Uses `~/.cursor/chats/` per-chat structure
+- Individual `store.db` per chat
+- Unknown/undocumented schema
+
+### Current Implementation Approaches
+
+#### 1. Fallback Strategy (Implemented in blink-api)
+
+When remote agent is unreachable or messages can't be fetched:
+
+```rust
+// Try to fetch from remote device
+match remote_result {
+    Ok(response) if response.status().is_success() => {
+        // Use remote data
+    }
+    Ok(response) | Err(_) => {
+        // Fall back to local Cursor IDE DB
+        fetch_local_messages(&settings, &chat_id, &params, true)
+    }
+}
+```
+
+**Pros:**
+- Always shows some data
+- Graceful degradation
+- Works offline
+
+**Cons:**
+- Not truly "remote" - shows local copy
+- May be stale if remote has newer messages
+- Requires chat to exist locally
+
+#### 2. Direct Remote Query (Not Yet Implemented)
+
+Read from remote cursor-agent's `store.db`:
+
+```bash
+# SSH to remote machine
+ssh user@remote-host
+
+# Find the chat
+find ~/.cursor/chats -name "store.db" | \
+  grep <chat_id>
+
+# Query the database (schema TBD)
+sqlite3 ~/.cursor/chats/.../store.db "SELECT ..."
+```
+
+**Pros:**
+- True remote data
+- Most up-to-date
+
+**Cons:**
+- Requires SSH access
+- Schema unknown
+- Performance overhead
+
+#### 3. cursor-agent Export (Potential Future)
+
+Use cursor-agent CLI to export messages:
+
+```bash
+# Hypothetical command (may not exist)
+cursor-agent export-chat --chat-id <id> --format json
+```
+
+**Pros:**
+- Clean abstraction
+- Version-proof
+
+**Cons:**
+- Requires cursor-agent support
+- May not be implemented
+
+### Recommended Pattern for Remote Systems
+
+For systems using remote cursor-agent:
+
+1. **Track remote chats separately** in `remote_chats` table
+2. **Attempt remote fetch** via HTTP endpoint to remote-agent-service
+3. **Fallback to local DB** if remote unavailable
+4. **Mark as fallback** in metadata (`location: "local_fallback"`)
+5. **Implement discovery** by querying remote's `~/.cursor/chats` directory
+6. **Cache remotely** if performance critical
+
+**Example Database Schema:**
+```sql
+CREATE TABLE remote_chats (
+    chat_id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    working_directory TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT 'Untitled',
+    created_at TEXT NOT NULL,
+    last_updated_at TEXT,
+    message_count INTEGER DEFAULT 0,
+    last_message_preview TEXT
+);
+```
+
+### Implementation Status (Updated November 2025)
+
+**✅ FULLY IMPLEMENTED:**
+
+1. ✅ cursor-agent schema discovered and documented
+2. ✅ Metadata reading (agentId, name, createdAt, etc.)
+3. ✅ Message counting and blob enumeration
+4. ✅ **Protobuf message extraction** - JSON embedded in blobs
+5. ✅ Full message text extraction working
+6. ✅ Local cursor-agent format reader implemented
+7. ✅ Remote cursor-agent format reader implemented
+8. ✅ Fallback mechanism: Remote → Local cursor-agent → Cursor IDE
+9. ✅ Confirmed format compatibility across macOS, Linux, remote systems
+10. ✅ End-to-end testing with context preservation verified
+
+**Current Capabilities:**
+
+The system now fully supports cursor-agent chats:
+- `remote-agent-service/src/db.rs`: Reads from `~/.cursor/chats/<hash>/<chat_id>/store.db`
+- `rest-rust/src/db/cursor_agent.rs`: Shared cursor-agent format reader
+- `rest-rust/src/api/chats.rs`: Automatic format detection and fallback
+
+**Key Discovery:**
+
+Protobuf blobs contain JSON-encoded messages, not pure protobuf. The wrapper is minimal:
+```rust
+// Blob structure: [protobuf wrapper] + JSON message data
+// JSON can be extracted by finding { ... } substring
+// No full protobuf schema decoding needed
+```
+
+**Architecture:**
+```
+User Request → blink-api
+    ↓
+Is Remote Chat?
+    ├─ Yes → Try Remote Agent
+    │   ├─ Success → Return messages
+    │   └─ Fail → Fallback to Local
+    │       ├─ Try cursor-agent format
+    │       └─ Try Cursor IDE format
+    └─ No → Local Chat
+        ├─ Try cursor-agent format
+        └─ Try Cursor IDE format
+```
+
+See:
+- `remote-agent-service/src/db.rs` - Remote cursor-agent reader
+- `rest-rust/src/db/cursor_agent.rs` - Local cursor-agent reader
+- `rest-rust/src/api/chats.rs` - Fallback orchestration
+
+## cursor-agent Integration - End-to-End Testing ✓
+
+### Implemented Features
+
+As of November 2025, full cursor-agent storage format support has been implemented and tested:
+
+**Storage Format Support:**
+- ✓ Read messages from `~/.cursor/chats/<user_hash>/<chat_id>/store.db`
+- ✓ Decode hex-encoded metadata from `meta` table
+- ✓ Extract JSON messages from protobuf-wrapped blobs
+- ✓ Support for user, assistant, and system message roles
+- ✓ Fallback mechanism: Remote → Local cursor-agent → Local Cursor IDE
+
+**Message Extraction:**
+- Blobs contain JSON-encoded messages wrapped in minimal protobuf
+- JSON structure: `{"role": "user|assistant|system", "content": [...], "text": "..."}`
+- User messages: content array with text objects
+- Assistant messages: top-level `text` field
+- Non-message blobs (state/metadata) are automatically skipped
+
+### End-to-End Test Results
+
+All tests performed on **November 14, 2025** with successful results:
+
+#### Test 1: Basic Arithmetic with Context
+```bash
+Chat ID: 5159fd0e-552b-4e01-bf7d-20b0b9230e90
+Message 1: "What is 2 + 2?" → Response: "4"
+Message 2: "And times 70?" → Response: "280"
+✓ PASSED: Context preserved across messages
+✓ PASSED: blink-api correctly reads all messages
+```
+
+#### Test 2: String Manipulation
+```bash
+Chat ID: 29a5da87-fc91-49ec-ac7f-23df890bd570
+Message 1: "What is 'hello' in uppercase?" → Response: "HELLO"
+Message 2: "Now add 'WORLD' to it" → Response: "HELLO WORLD"
+✓ PASSED: String context preserved
+```
+
+#### Test 3: List Operations with Memory
+```bash
+Chat ID: 2ba4fecf-5cef-4662-9607-bc2cff01fa14
+Message 1: "Give me 3 colors" → Response: "1. Blue 2. Green 3. Red"
+Message 2: "How many colors did you give me?" → Response: "I gave you 3 colors"
+✓ PASSED: Agent correctly recalled previous response
+```
+
+#### Test 4: Multi-Turn Context Chain
+```bash
+Chat ID: 65e8c31d-eeef-465a-97b8-fd6e41f11175
+Turn 1: "Set x = 5. What is x?" → Response: "x is 5"
+Turn 2: "What is x + 3?" → Response: "x + 3 = 8"
+Turn 3: "Now multiply that by 2" → Response: "8 × 2 = 16"
+✓ PASSED: Complex multi-turn context preserved (5 → 8 → 16)
+```
+
+### Working with cursor-agent Chats
+
+**Creating and Using Chats:**
+```bash
+# Create a new chat
+CHAT_ID=$(cursor-agent create-chat)
+
+# Send messages in headless mode
+cursor-agent --print --resume "$CHAT_ID" "Your message here"
+
+# Read messages via blink-api
+curl "http://localhost:8067/chats/$CHAT_ID?include_metadata=true&include_content=true"
+```
+
+**Message Format in blink-api Response:**
+```json
+{
+  "chat_id": "...",
+  "message_count": 7,
+  "messages": [
+    {
+      "blob_id": "...",
+      "type": 1,
+      "type_label": "user",
+      "text": "Message content",
+      "is_remote": false
+    }
+  ],
+  "metadata": {
+    "format": "cursor-agent",
+    "location": "local",
+    "name": "Chat name",
+    "created_at": 1763171420000,
+    "agent_id": "...",
+    "mode": "auto-run"
+  }
+}
+```
+
+### Best Practices
+
+1. **Context Preservation**: cursor-agent maintains context across messages in a chat session
+2. **Headless Mode**: Use `--print` flag for non-interactive/scripting use
+3. **Message Persistence**: Messages are immediately persisted to `store.db`
+4. **Format Detection**: blink-api automatically detects and uses cursor-agent format
+5. **Fallback Safety**: If remote is unavailable, local cursor-agent format is tried automatically
+
+### Architecture
+
+**Remote Agent Service:**
+- `remote-agent-service/src/db.rs`: cursor-agent format reader
+- Functions: `find_cursor_agent_chat()`, `get_chat_messages_from_agent()`, `get_chat_metadata_from_agent()`
+- Endpoint: `GET /messages/:chat_id` returns JSON-decoded messages
+
+**blink-api:**
+- `rest-rust/src/db/cursor_agent.rs`: Local cursor-agent format reader (shared logic)
+- `rest-rust/src/api/chats.rs`: Fallback mechanism (remote → cursor-agent → Cursor IDE)
+- Automatic format detection and metadata marking
+
+### Known Behaviors
+
+- System messages (agent instructions) are included in message list
+- Some blobs contain state/metadata and are skipped automatically
+- Message order preserved by blob ID sorting
+- Both formats (cursor-agent and Cursor IDE) coexist peacefully
+- Context is preserved across multiple turns within a chat session
 
 ## Related Skills
 
