@@ -858,11 +858,13 @@ The system now fully supports cursor-agent chats:
 
 **Key Discovery:**
 
-Protobuf blobs contain JSON-encoded messages, not pure protobuf. The wrapper is minimal:
+Protobuf blobs contain pure protobuf-encoded data. A manual protobuf parser is implemented:
 ```rust
-// Blob structure: [protobuf wrapper] + JSON message data
-// JSON can be extracted by finding { ... } substring
-// No full protobuf schema decoding needed
+// Blob structure: Pure protobuf with length-delimited fields
+// Field 1 (tag 0x0A): Message text (UTF-8 string)
+// Field 2 (tag 0x12): Message ID/UUID (UTF-8 string)  
+// Field 3 (tag 0x1A): Optional/empty field
+// Parser reads field tags, wire types, and extracts data
 ```
 
 **Architecture:**
@@ -894,16 +896,16 @@ As of November 2025, full cursor-agent storage format support has been implement
 **Storage Format Support:**
 - ✓ Read messages from `~/.cursor/chats/<user_hash>/<chat_id>/store.db`
 - ✓ Decode hex-encoded metadata from `meta` table
-- ✓ Extract JSON messages from protobuf-wrapped blobs
+- ✓ Extract messages from pure protobuf blobs using manual parser
 - ✓ Support for user, assistant, and system message roles
 - ✓ Fallback mechanism: Remote → Local cursor-agent → Local Cursor IDE
 
 **Message Extraction:**
-- Blobs contain JSON-encoded messages wrapped in minimal protobuf
-- JSON structure: `{"role": "user|assistant|system", "content": [...], "text": "..."}`
-- User messages: content array with text objects
-- Assistant messages: top-level `text` field
-- Non-message blobs (state/metadata) are automatically skipped
+- Blobs contain pure protobuf-encoded data (NOT JSON)
+- Manual protobuf parser extracts field 1 (text) and field 2 (ID)
+- Decoder creates JSON structure: `{"role": "user|assistant", "content": [...], "text": "..."}`
+- Role detection uses blob ordering: odd indices = user, even = assistant
+- Empty blobs (state/metadata) return empty JSON and are skipped
 
 ### End-to-End Test Results
 
