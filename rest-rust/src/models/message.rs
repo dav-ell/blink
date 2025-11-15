@@ -54,6 +54,8 @@ pub struct Message {
     pub code_blocks: Option<Vec<HashMap<String, Value>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub todos: Option<Vec<HashMap<String, Value>>>,
+    #[serde(default)]
+    pub is_remote: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

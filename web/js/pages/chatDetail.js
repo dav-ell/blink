@@ -13,6 +13,7 @@ class ChatDetailPage {
         this.chatMetadata = null;
         this.chat = null;
         this.isSending = false;
+        this.optimisticMessages = []; // Track messages not yet in backend
         
         if (!this.chatId) {
             alert('No chat ID provided');
@@ -134,17 +135,32 @@ class ChatDetailPage {
                 });
             }
 
+            // Remove optimistic messages that now exist in the real messages
+            // Match by text content
+            this.optimisticMessages = this.optimisticMessages.filter(optMsg => {
+                const exists = this.messages.some(realMsg => 
+                    realMsg.content.trim() === optMsg.content.trim() &&
+                    realMsg.role === optMsg.role
+                );
+                return !exists;
+            });
+
             this.updateChatHeader();
             this.renderMessages();
             this.scrollToBottom();
 
-            if (this.messages.length === 0) {
+            if (this.getAllMessages().length === 0) {
                 this.showEmpty();
             }
         } catch (error) {
             console.error('Failed to load chat:', error);
             this.showError(error.message);
         }
+    }
+
+    getAllMessages() {
+        // Combine real messages with optimistic ones
+        return [...this.messages, ...this.optimisticMessages];
     }
 
     updateChatHeader() {
@@ -206,13 +222,14 @@ class ChatDetailPage {
         const existingMessages = this.messagesListEl.querySelectorAll('.message-bubble, .tool-call-box, .thinking-box');
         existingMessages.forEach(msg => msg.remove());
 
-        if (this.messages.length === 0) {
+        const allMessages = this.getAllMessages();
+        if (allMessages.length === 0) {
             this.showEmpty();
             return;
         }
 
-        // Render messages
-        this.messages.forEach(message => {
+        // Render all messages (real + optimistic)
+        allMessages.forEach(message => {
             const bubble = createMessageBubble(message);
             this.messagesListEl.appendChild(bubble);
         });
@@ -239,6 +256,12 @@ class ChatDetailPage {
         this.messageInputEl.value = '';
         this.autoResizeTextarea();
 
+        // Detect if this is a remote chat
+        const isRemote = this.isRemoteChat();
+
+        // Store the initial message count (includes optimistic)
+        const initialMessageCount = this.getAllMessages().length;
+
         // Add optimistic user message
         const tempMessage = new Message({
             bubble_id: `temp-${Date.now()}`,
@@ -246,23 +269,37 @@ class ChatDetailPage {
             type_label: 'user',
             created_at: new Date().toISOString(),
             status: 'sending',
+            is_remote: isRemote,
+            sent_at: new Date().toISOString(),
         });
-        this.messages.push(tempMessage);
+        this.optimisticMessages.push(tempMessage);
         this.renderMessages();
         this.scrollToBottom();
 
         try {
+            // Update status to processing for remote messages
+            if (isRemote) {
+                tempMessage.status = 'processing';
+                tempMessage.deliveredAt = new Date();
+                this.renderMessages();
+            }
+
             // Send message to appropriate endpoint (local or remote)
-            if (this.isRemoteChat()) {
+            if (isRemote) {
                 await apiClient.sendRemoteMessage(this.chatId, messageText);
             } else {
                 await apiClient.sendMessage(this.chatId, messageText, false);
             }
 
-            // Reload chat to get the actual response
-            setTimeout(() => {
-                this.loadChat();
-            }, 1000);
+            // Update status to completed for remote messages
+            if (isRemote) {
+                tempMessage.status = 'completed';
+                tempMessage.completedAt = new Date();
+                this.renderMessages();
+            }
+
+            // Poll for new messages instead of single reload
+            this.pollForNewMessages(initialMessageCount, isRemote);
         } catch (error) {
             console.error('Failed to send message:', error);
             
@@ -279,6 +316,45 @@ class ChatDetailPage {
             this.messageInputEl.disabled = false;
             this.messageInputEl.focus();
         }
+    }
+
+    async pollForNewMessages(initialCount, isRemote = false) {
+        // Poll more aggressively for remote messages (up to 10 minutes)
+        const maxAttempts = isRemote ? 120 : 10;  // 120 * 5s = 10 minutes for remote
+        const interval = isRemote ? 5000 : 1000;   // 5 seconds for remote, 1 second for local
+        let attempts = 0;
+
+        const poll = async () => {
+            attempts++;
+            
+            try {
+                const response = await apiClient.getChatMessages(this.chatId);
+                const apiMessageCount = response.messages.length;
+                
+                // Check if we have new messages in the API (beyond optimistic ones)
+                // We compare against the real message count from before sending
+                if (apiMessageCount > this.messages.length) {
+                    // New messages arrived, reload the full chat
+                    await this.loadChat();
+                    return;
+                }
+                
+                // Continue polling if we haven't exceeded max attempts
+                if (attempts < maxAttempts) {
+                    setTimeout(poll, interval);
+                } else {
+                    // Timeout reached, do final reload
+                    await this.loadChat();
+                }
+            } catch (error) {
+                console.error('Error polling for messages:', error);
+                // On error, stop polling and do final reload
+                await this.loadChat();
+            }
+        };
+
+        // Start polling after a short delay
+        setTimeout(poll, interval);
     }
 
     showLoading() {

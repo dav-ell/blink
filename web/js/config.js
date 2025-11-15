@@ -6,6 +6,7 @@ export const API_CONFIG = {
         listChats: '/chats',
         getChatMessages: (chatId) => `/chats/${chatId}`,
         getChatMetadata: (chatId) => `/chats/${chatId}/metadata`,
+        createChat: '/agent/create-chat',
         sendMessage: (chatId) => `/chats/${chatId}/agent-prompt`,
         sendMessageAsync: (chatId) => `/chats/${chatId}/agent-prompt-async`,
         getJobStatus: (jobId) => `/jobs/${jobId}/status`,

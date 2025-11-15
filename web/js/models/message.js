@@ -33,6 +33,10 @@ export class Message {
         this.codeBlocks = data.code_blocks || null;
         this.todos = data.todos || null;
         
+        // Remote flag
+        this.isRemote = data.is_remote || false;
+        this.deliveredAt = data.delivered_at ? new Date(data.delivered_at) : null;
+        
         // Status
         this.status = data.status || MessageStatus.COMPLETED;
         this.jobId = data.job_id || null;

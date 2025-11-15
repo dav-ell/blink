@@ -3,6 +3,7 @@ pub mod job_service;
 pub mod chat_service;
 pub mod http_agent_service;
 pub mod device_service;
+pub mod discovery_service;
 
 pub use agent_service::{run_cursor_agent, AgentResponse, AVAILABLE_MODELS};
 pub use job_service::{
@@ -17,4 +18,5 @@ pub use device_service::{
 pub use http_agent_service::{
     execute_remote_cursor_agent, test_http_connection, HttpAgentResponse,
 };
+pub use discovery_service::{discover_remote_hosts, DiscoveryResult, DiscoveryStatus};
 

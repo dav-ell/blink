@@ -102,10 +102,10 @@ export function createMessageBubble(message) {
         meta.className = 'message-meta';
         meta.style.marginTop = 'var(--spacing-sm)';
         
-        const statusIcon = getStatusIcon(message.status);
+        const statusIcon = getStatusIcon(message.status, message.isRemote);
         meta.innerHTML = `
-            <span>${statusIcon}</span>
             <span>${Formatter.formatTime(message.timestamp)}</span>
+            ${statusIcon}
         `;
         contentDiv.appendChild(meta);
 
@@ -191,7 +191,12 @@ function hasContentTypes(message) {
            message.hasToolCall || message.hasThinking;
 }
 
-function getStatusIcon(status) {
+function getStatusIcon(status, isRemote = false) {
+    if (isRemote) {
+        return getRemoteStatusIcon(status);
+    }
+    
+    // Local messages - keep existing simple icons
     switch (status) {
         case MessageStatus.PENDING:
             return '⏱️';
@@ -205,6 +210,29 @@ function getStatusIcon(status) {
             return '⚠️';
         default:
             return '•';
+    }
+}
+
+function getRemoteStatusIcon(status) {
+    // WhatsApp-style delivery status for remote messages
+    switch (status) {
+        case MessageStatus.PENDING:
+            return '<span class="message-status-icon sending">⏱️</span>';
+        case MessageStatus.SENDING:
+            return '<span class="message-status-icon sending">↗️</span>';
+        case MessageStatus.PROCESSING:
+            return `
+                <span class="message-status-icon processing">
+                    <span class="message-status-checkmarks delivered">✓✓</span>
+                    <div class="spinner"></div>
+                </span>
+            `;
+        case MessageStatus.COMPLETED:
+            return '<span class="message-status-checkmarks completed">✓✓</span>';
+        case MessageStatus.FAILED:
+            return '<span class="message-status-icon">⚠️</span>';
+        default:
+            return '<span class="message-status-checkmarks delivered">✓✓</span>';
     }
 }
 

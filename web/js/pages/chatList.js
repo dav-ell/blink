@@ -3,6 +3,7 @@ import { Chat } from '../models/chat.js';
 import { createChatCard } from '../components/chatCard.js';
 import { themeManager } from '../utils/theme.js';
 import { ChatLocation } from '../models/device.js';
+import { NewChatModal } from '../components/newChatModal.js';
 
 class ChatListPage {
     constructor() {
@@ -15,8 +16,21 @@ class ChatListPage {
         
         this.initElements();
         this.initTheme();
+        this.initNewChatModal();
         this.attachEventListeners();
         this.loadChats();
+    }
+
+    initNewChatModal() {
+        // Create and initialize the new chat modal
+        this.newChatModal = new NewChatModal();
+        
+        // Set callback for when chat is created
+        this.newChatModal.onChatCreated = (chatId, location) => {
+            console.log(`Chat created: ${chatId} (${location})`);
+            // Optionally reload chats to show the new one
+            // this.loadChats();
+        };
     }
 
     initTheme() {
@@ -39,6 +53,7 @@ class ChatListPage {
         this.themeToggleEl = document.getElementById('themeToggle');
         this.retryBtnEl = document.getElementById('retryBtn');
         this.filterBtns = document.querySelectorAll('.filter-btn');
+        this.newChatFabEl = document.getElementById('newChatFab');
     }
 
     attachEventListeners() {
@@ -67,6 +82,11 @@ class ChatListPage {
         // Retry button
         this.retryBtnEl.addEventListener('click', () => {
             this.loadChats();
+        });
+
+        // New chat FAB
+        this.newChatFabEl.addEventListener('click', () => {
+            this.newChatModal.open();
         });
     }
 

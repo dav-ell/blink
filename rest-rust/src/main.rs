@@ -41,6 +41,40 @@ async fn main() -> anyhow::Result<()> {
     db::device_db::ensure_device_db_initialized(&internal_pool).await?;
     tracing::info!("Internal databases initialized");
     
+    // Auto-discover remote agents from configuration
+    // Look for remote_hosts.yaml in project root (parent of rest-rust directory)
+    let config_path = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .parent()
+        .map(|p| p.join("remote_hosts.yaml"))
+        .unwrap_or_else(|| std::path::PathBuf::from("remote_hosts.yaml"));
+    
+    if config_path.exists() {
+        tracing::info!("Discovering remote agents from {}", config_path.display());
+        let discovery_results = services::discover_remote_hosts(&internal_pool, &config_path).await;
+        
+        // Log individual results
+        for result in &discovery_results {
+            match result.status {
+                services::DiscoveryStatus::Success => {
+                    tracing::info!("  ✓ {}: {}", result.name, result.message);
+                }
+                services::DiscoveryStatus::AlreadyExists => {
+                    tracing::info!("  • {}: {}", result.name, result.message);
+                }
+                services::DiscoveryStatus::Unreachable => {
+                    tracing::warn!("  ✗ {}: {}", result.name, result.message);
+                }
+                services::DiscoveryStatus::Error => {
+                    tracing::error!("  ✗ {}: {}", result.name, result.message);
+                }
+            }
+        }
+    } else {
+        tracing::info!("No remote hosts configuration found at {}", config_path.display());
+        tracing::info!("Skipping auto-discovery. Add remote_hosts.yaml to enable.");
+    }
+    
     // Create circuit breaker with configuration
     let circuit_breaker_config = blink_api::middleware::circuit_breaker::CircuitBreakerConfig {
         failure_threshold: 5,
@@ -48,12 +82,19 @@ async fn main() -> anyhow::Result<()> {
         timeout: Duration::from_secs(60),
     };
     
+    // Create HTTP client for remote device communication
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .expect("Failed to create HTTP client");
+    
     // Create shared state
     let state = Arc::new(AppState {
         settings: settings.clone(),
         job_pool: internal_pool,
         metrics: blink_api::MetricsCollector::new(),
         circuit_breaker: blink_api::middleware::DeviceCircuitBreaker::new(circuit_breaker_config),
+        http_client,
     });
     
     // Configure CORS

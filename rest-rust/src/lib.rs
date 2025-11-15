@@ -12,6 +12,7 @@ pub use error::{AppError, Result};
 pub use utils::{MetricsCollector, RequestContext};
 
 use sqlx::SqlitePool;
+use reqwest::Client;
 
 /// Application state shared across handlers
 pub struct AppState {
@@ -19,5 +20,6 @@ pub struct AppState {
     pub job_pool: SqlitePool,
     pub metrics: MetricsCollector,
     pub circuit_breaker: middleware::DeviceCircuitBreaker,
+    pub http_client: Client,
 }
 

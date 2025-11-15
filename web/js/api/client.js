@@ -112,6 +112,15 @@ class ApiClient {
             }),
         });
     }
+
+    async createLocalChat(name = null) {
+        return this.request(API_CONFIG.endpoints.createChat, {
+            method: 'POST',
+            body: JSON.stringify({
+                ...(name && { name }),
+            }),
+        });
+    }
 }
 
 export const apiClient = new ApiClient();

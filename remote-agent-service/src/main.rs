@@ -1,19 +1,17 @@
 use axum::{
-    extract::State,
-    http::{HeaderMap, Request, StatusCode},
-    middleware::{self, Next},
-    response::Response,
+    extract::{Path, Query, State},
+    http::HeaderMap,
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::{env, sync::Arc, time::Instant};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use remote_agent_service::{AppError, Config, execute_cursor_agent};
-use uuid::Uuid;
+use remote_agent_service::{AppError, Config, execute_cursor_agent, get_chat_messages_from_agent, get_chat_metadata_from_agent};
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -58,6 +56,20 @@ struct ExecuteResponse {
     stderr: String,
     returncode: i32,
     execution_time_ms: u64,
+}
+
+/// Query parameters for messages endpoint
+#[derive(Debug, Deserialize)]
+struct GetMessagesQuery {
+    #[serde(default = "default_true")]
+    include_metadata: bool,
+    #[serde(default = "default_true")]
+    include_content: bool,
+    limit: Option<usize>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Health check endpoint
@@ -161,6 +173,68 @@ async fn execute_handler(
     }))
 }
 
+/// Get messages for a chat
+async fn messages_handler(
+    Path(chat_id): Path<String>,
+    Query(params): Query<GetMessagesQuery>,
+) -> Result<Json<Value>, AppError> {
+    tracing::info!("Getting messages for chat: {}", chat_id);
+    
+    // Fetch messages from cursor-agent format
+    let chat_id_for_messages = chat_id.clone();
+    let messages = tokio::task::spawn_blocking(move || {
+        get_chat_messages_from_agent(&chat_id_for_messages, params.include_content)
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("Task join error: {}", e))??;
+    
+    let mut result = json!({
+        "chat_id": chat_id,
+        "message_count": messages.len(),
+        "messages": messages
+    });
+    
+    // Add metadata if requested
+    if params.include_metadata {
+        let chat_id_for_metadata = chat_id.clone();
+        let metadata = tokio::task::spawn_blocking(move || {
+            get_chat_metadata_from_agent(&chat_id_for_metadata)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Task join error: {}", e))?;
+        
+        match metadata {
+            Ok(meta) => {
+                result["metadata"] = json!({
+                    "name": meta.get("name"),
+                    "created_at": meta.get("createdAt"),
+                    "agent_id": meta.get("agentId"),
+                    "mode": meta.get("mode"),
+                });
+            }
+            Err(e) => {
+                tracing::warn!("Failed to get metadata: {}", e);
+            }
+        }
+    }
+    
+    // Apply limit if specified
+    if let Some(limit) = params.limit {
+        if let Some(messages_array) = result["messages"].as_array_mut() {
+            messages_array.truncate(limit);
+            result["message_count"] = json!(messages_array.len());
+        }
+    }
+    
+    tracing::info!(
+        "Returning {} messages for chat: {}",
+        result["message_count"],
+        result["chat_id"]
+    );
+    
+    Ok(Json(result))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
@@ -200,6 +274,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/execute", post(execute_handler))
+        .route("/messages/:chat_id", get(messages_handler))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
