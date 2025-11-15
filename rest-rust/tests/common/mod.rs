@@ -1,8 +1,11 @@
 use axum::Router;
 use blink_api::{api, middleware, utils::metrics::MetricsCollector, AppState, Settings};
+use reqwest::Client;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
+use tokio::sync::Mutex;
 
 /// Create test settings with temporary databases
 #[allow(dead_code)]
@@ -149,6 +152,8 @@ pub async fn create_test_app() -> Router {
         job_pool: pool,
         metrics: MetricsCollector::new(),
         circuit_breaker: middleware::DeviceCircuitBreaker::default(),
+        http_client: Client::new(),
+        task_handles: Arc::new(Mutex::new(HashMap::new())),
     });
 
     Router::new()
