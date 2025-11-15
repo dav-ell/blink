@@ -134,6 +134,18 @@ class ChatListPage {
                 });
                 cursorAgentChats = cursorAgentResponse.chats || [];
                 this.cursorAgentChats = cursorAgentChats.map(chatData => Chat.fromJson(chatData));
+                
+                // Debug: log first cursor-agent chat
+                if (this.cursorAgentChats.length > 0) {
+                    const firstChat = this.cursorAgentChats[0];
+                    console.log('First cursor-agent chat:', {
+                        id: firstChat.id,
+                        title: firstChat.title,
+                        format: firstChat.format,
+                        isCursorAgent: firstChat.isCursorAgent,
+                        location: firstChat.location
+                    });
+                }
             } catch (cursorAgentError) {
                 console.warn('Failed to load cursor-agent chats:', cursorAgentError);
                 this.cursorAgentChats = [];
@@ -155,6 +167,17 @@ class ChatListPage {
     }
 
     filterChats() {
+        // Debug: log filter info
+        if (this.currentFilter === 'cursor-agent') {
+            console.log('Filtering for cursor-agent. Total chats:', this.chats.length);
+            console.log('Cursor-agent chats:', this.chats.filter(c => c.isCursorAgent).length);
+            console.log('Sample chat:', this.chats[0] ? {
+                id: this.chats[0].id,
+                format: this.chats[0].format,
+                isCursorAgent: this.chats[0].isCursorAgent
+            } : 'no chats');
+        }
+        
         this.filteredChats = this.chats.filter(chat => {
             // Apply location filter
             if (this.currentFilter === 'local' && chat.location !== ChatLocation.LOCAL) {

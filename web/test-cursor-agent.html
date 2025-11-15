@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Cursor-Agent</title>
+</head>
+<body>
+    <h1>Cursor-Agent Filter Test</h1>
+    <pre id="output">Loading...</pre>
+    
+    <script type="module">
+        import { Chat } from './js/models/chat.js';
+        
+        async function test() {
+            const output = document.getElementById('output');
+            let result = '';
+            
+            try {
+                // Test 1: Fetch cursor-agent chats
+                const response = await fetch('http://localhost:8067/chats/cursor-agent');
+                const data = await response.json();
+                result += `✓ API returned ${data.total} cursor-agent chats\n\n`;
+                
+                // Test 2: Parse first chat
+                if (data.chats && data.chats.length > 0) {
+                    const firstChatData = data.chats[0];
+                    result += `First chat data from API:\n`;
+                    result += `  chat_id: ${firstChatData.chat_id}\n`;
+                    result += `  format: ${firstChatData.format}\n`;
+                    result += `  name: ${firstChatData.name}\n\n`;
+                    
+                    // Test 3: Create Chat object
+                    const chat = Chat.fromJson(firstChatData);
+                    result += `Chat object created:\n`;
+                    result += `  id: ${chat.id}\n`;
+                    result += `  format: ${chat.format}\n`;
+                    result += `  isCursorAgent: ${chat.isCursorAgent}\n`;
+                    result += `  isCursorIDE: ${chat.isCursorIDE}\n\n`;
+                    
+                    if (chat.isCursorAgent) {
+                        result += `✓ Filter should work - chat.isCursorAgent is true\n`;
+                    } else {
+                        result += `✗ PROBLEM - chat.isCursorAgent is false\n`;
+                        result += `  Expected format: "cursor-agent"\n`;
+                        result += `  Actual format: "${chat.format}"\n`;
+                    }
+                }
+            } catch (error) {
+                result += `✗ Error: ${error.message}\n`;
+            }
+            
+            output.textContent = result;
+        }
+        
+        test();
+    </script>
+</body>
+</html>

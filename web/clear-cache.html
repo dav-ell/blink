@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Clear Cache</title>
+</head>
+<body>
+    <h1>Clearing Cache...</h1>
+    <pre id="status">Working...</pre>
+    
+    <script>
+        async function clearAllCaches() {
+            const status = document.getElementById('status');
+            let log = '';
+            
+            try {
+                // Clear all caches
+                const cacheNames = await caches.keys();
+                for (const name of cacheNames) {
+                    await caches.delete(name);
+                    log += `✓ Cleared cache: ${name}\n`;
+                }
+                
+                // Clear service workers
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    await registration.unregister();
+                    log += `✓ Unregistered service worker\n`;
+                }
+                
+                log += '\n✓ All caches cleared!\n';
+                log += '\nNow close this tab and open:\n';
+                log += 'http://localhost:8001/index.html\n';
+                
+            } catch (error) {
+                log += `Error: ${error.message}\n`;
+                log += '\nManual steps:\n';
+                log += '1. Open DevTools (F12)\n';
+                log += '2. Go to Application tab\n';
+                log += '3. Click "Clear storage" > "Clear site data"\n';
+                log += '4. Or use Incognito/Private browsing mode\n';
+            }
+            
+            status.textContent = log;
+        }
+        
+        clearAllCaches();
+    </script>
+</body>
+</html>

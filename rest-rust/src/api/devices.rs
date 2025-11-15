@@ -215,9 +215,6 @@ pub async fn create_device_chat(
     // Set device_id on the create request
     chat_create.device_id = device_id.clone();
 
-    // Create chat via SSH on remote device
-    let chat_id = uuid::Uuid::new_v4().to_string();
-
     // Store remote chat association
     let remote_chat = services::create_remote_chat(&state.job_pool, chat_create).await?;
 
@@ -226,14 +223,14 @@ pub async fn create_device_chat(
 
     tracing::info!(
         "Created remote chat {} on device {} ({})",
-        chat_id,
+        remote_chat.chat_id,
         device.name,
         device_id
     );
 
     Ok(Json(json!({
         "status": "success",
-        "chat_id": chat_id,
+        "chat_id": remote_chat.chat_id,
         "device_id": remote_chat.device_id,
         "device_name": device.name,
         "working_directory": remote_chat.working_directory,

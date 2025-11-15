@@ -8,7 +8,10 @@ use std::sync::Arc;
 
 use crate::{
     models::{AgentPromptRequest, Job},
-    services::{create_job, get_chat_jobs, get_job, run_cursor_agent, update_job_status, update_job_result},
+    services::{
+        create_job, execute_remote_cursor_agent, get_chat_jobs, get_device, get_job,
+        get_remote_chat, run_cursor_agent, update_job_status, update_job_result,
+    },
     AppState, Result,
 };
 
@@ -70,16 +73,147 @@ async fn execute_job(
         return;
     }
 
-    // Execute cursor-agent
-    let result = run_cursor_agent(
-        &state.settings,
-        &chat_id,
-        &prompt,
-        Some(&model),
-        &output_format,
-        state.settings.cursor_agent_timeout,
-    )
-    .await;
+    // Check if this is a remote chat
+    let is_remote = match get_remote_chat(&state.job_pool, &chat_id).await {
+        Ok(Some(remote_chat)) => {
+            tracing::info!("Job {} is for remote chat on device {}", job_id, remote_chat.device_id);
+            true
+        }
+        Ok(None) => {
+            tracing::info!("Job {} is for local chat", job_id);
+            false
+        }
+        Err(e) => {
+            tracing::error!("Failed to check if chat is remote: {}", e);
+            false // Fallback to local
+        }
+    };
+
+    // Execute cursor-agent (locally or remotely)
+    let result = if is_remote {
+        // Get remote chat and device info
+        let remote_chat = match get_remote_chat(&state.job_pool, &chat_id).await {
+            Ok(Some(chat)) => chat,
+            Ok(None) => {
+                let error_msg = "Remote chat not found";
+                tracing::error!("Job {} failed: {}", job_id, error_msg);
+                if let Err(e) = update_job_status(&state.job_pool, &job_id, "failed").await {
+                    tracing::error!("Failed to update job status: {}", e);
+                }
+                if let Err(e) = sqlx::query("UPDATE jobs SET error = ? WHERE job_id = ?")
+                    .bind(error_msg)
+                    .bind(&job_id)
+                    .execute(&state.job_pool)
+                    .await
+                {
+                    tracing::error!("Failed to update job error: {}", e);
+                }
+                return;
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to get remote chat: {}", e);
+                tracing::error!("Job {} failed: {}", job_id, error_msg);
+                if let Err(e) = update_job_status(&state.job_pool, &job_id, "failed").await {
+                    tracing::error!("Failed to update job status: {}", e);
+                }
+                if let Err(e) = sqlx::query("UPDATE jobs SET error = ? WHERE job_id = ?")
+                    .bind(&error_msg)
+                    .bind(&job_id)
+                    .execute(&state.job_pool)
+                    .await
+                {
+                    tracing::error!("Failed to update job error: {}", e);
+                }
+                return;
+            }
+        };
+
+        let device = match get_device(&state.job_pool, &remote_chat.device_id).await {
+            Ok(Some(dev)) => dev,
+            Ok(None) => {
+                let error_msg = format!("Device {} not found", remote_chat.device_id);
+                tracing::error!("Job {} failed: {}", job_id, error_msg);
+                if let Err(e) = update_job_status(&state.job_pool, &job_id, "failed").await {
+                    tracing::error!("Failed to update job status: {}", e);
+                }
+                if let Err(e) = sqlx::query("UPDATE jobs SET error = ? WHERE job_id = ?")
+                    .bind(&error_msg)
+                    .bind(&job_id)
+                    .execute(&state.job_pool)
+                    .await
+                {
+                    tracing::error!("Failed to update job error: {}", e);
+                }
+                return;
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to get device: {}", e);
+                tracing::error!("Job {} failed: {}", job_id, error_msg);
+                if let Err(e) = update_job_status(&state.job_pool, &job_id, "failed").await {
+                    tracing::error!("Failed to update job status: {}", e);
+                }
+                if let Err(e) = sqlx::query("UPDATE jobs SET error = ? WHERE job_id = ?")
+                    .bind(&error_msg)
+                    .bind(&job_id)
+                    .execute(&state.job_pool)
+                    .await
+                {
+                    tracing::error!("Failed to update job error: {}", e);
+                }
+                return;
+            }
+        };
+
+        tracing::info!("Executing job {} on remote device: {}", job_id, device.name);
+        execute_remote_cursor_agent(
+            &state.settings,
+            &device,
+            &chat_id,
+            &prompt,
+            &remote_chat.working_directory,
+            Some(&model),
+            &output_format,
+        )
+        .await
+        .map(|http_response| {
+            // Parse the remote output if it's JSON
+            let (parsed_content, parse_error) = match crate::utils::parse_cursor_agent_output(&http_response.stdout) {
+                Ok(parsed) => {
+                    let mut map = std::collections::HashMap::new();
+                    map.insert("text".to_string(), serde_json::json!(parsed.text));
+                    if let Some(thinking) = parsed.thinking {
+                        map.insert("thinking".to_string(), serde_json::json!(thinking));
+                    }
+                    if let Some(tool_calls) = parsed.tool_calls {
+                        map.insert("tool_calls".to_string(), serde_json::json!(tool_calls));
+                    }
+                    (Some(map), None)
+                },
+                Err(e) => (None, Some(format!("Failed to parse output: {}", e))),
+            };
+            
+            crate::services::agent_service::AgentResponse {
+                success: http_response.success,
+                stdout: http_response.stdout.clone(),
+                stderr: http_response.stderr,
+                returncode: http_response.returncode,
+                command: format!("Remote execution on {}", http_response.device_name),
+                parsed_content,
+                parse_error,
+            }
+        })
+    } else {
+        tracing::info!("Executing job {} locally", job_id);
+        run_cursor_agent(
+            &state.settings,
+            &chat_id,
+            &prompt,
+            Some(&model),
+            &output_format,
+            state.settings.cursor_agent_timeout,
+        )
+        .await
+    };
 
     match result {
         Ok(response) if response.success => {
