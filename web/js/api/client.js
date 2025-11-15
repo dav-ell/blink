@@ -7,11 +7,20 @@ class ApiClient {
 
     async request(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
+        const method = options.method || 'GET';
         const defaultOptions = {
             headers: {
                 'Content-Type': 'application/json',
             },
         };
+
+        // Log outgoing request
+        console.log('[API] Request:', {
+            method: method,
+            url: url,
+            body: options.body ? JSON.parse(options.body) : undefined,
+            timestamp: new Date().toISOString()
+        });
 
         try {
             const response = await fetch(url, { ...defaultOptions, ...options });
@@ -21,9 +30,27 @@ class ApiClient {
                 throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
             }
 
-            return await response.json();
+            const data = await response.json();
+            
+            // Log successful response
+            console.log('[API] Response:', {
+                status: response.status,
+                url: url,
+                messageCount: data.messages?.length || data.chats?.length || 0,
+                hasMetadata: !!data.metadata,
+                dataKeys: Object.keys(data),
+                timestamp: new Date().toISOString()
+            });
+
+            return data;
         } catch (error) {
-            console.error('API request failed:', error);
+            // Log error with full context
+            console.error('[API] Request failed:', {
+                method: method,
+                url: url,
+                error: error.message,
+                stack: error.stack
+            });
             throw error;
         }
     }

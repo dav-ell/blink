@@ -4,6 +4,7 @@ export const API_CONFIG = {
     endpoints: {
         // Local chats
         listChats: '/chats',
+        listCursorAgentChats: '/chats/cursor-agent',
         getChatMessages: (chatId) => `/chats/${chatId}`,
         getChatMetadata: (chatId) => `/chats/${chatId}/metadata`,
         createChat: '/agent/create-chat',

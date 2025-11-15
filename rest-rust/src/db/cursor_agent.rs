@@ -57,13 +57,91 @@ pub fn get_chat_metadata_from_agent(chat_id: &str) -> Result<Value, AppError> {
     Ok(metadata)
 }
 
+/// Decode protobuf fields from binary data
+/// Returns (message_text, message_id) if found
+fn decode_protobuf_fields(data: &[u8]) -> Option<(String, Option<String>)> {
+    let mut pos = 0;
+    let mut message_text: Option<String> = None;
+    let mut message_id: Option<String> = None;
+
+    while pos < data.len() {
+        // Read field tag (varint)
+        if pos >= data.len() {
+            break;
+        }
+        
+        let tag = data[pos];
+        pos += 1;
+        
+        let field_number = tag >> 3;
+        let wire_type = tag & 0x07;
+        
+        // Wire type 2 = length-delimited (strings, bytes, messages)
+        if wire_type == 2 {
+            // Read length (varint - simplified for single byte)
+            if pos >= data.len() {
+                break;
+            }
+            
+            let mut length = data[pos] as usize;
+            pos += 1;
+            
+            // Handle multi-byte varint length
+            if length >= 0x80 {
+                length &= 0x7F;
+                if pos < data.len() {
+                    length |= ((data[pos] as usize) & 0x7F) << 7;
+                    pos += 1;
+                }
+            }
+            
+            // Extract field data
+            if pos + length <= data.len() {
+                let field_data = &data[pos..pos + length];
+                
+                match field_number {
+                    1 => {
+                        // Field 1: Message text
+                        if let Ok(text) = String::from_utf8(field_data.to_vec()) {
+                            message_text = Some(text);
+                        }
+                    }
+                    2 => {
+                        // Field 2: Message ID/UUID
+                        if let Ok(id) = String::from_utf8(field_data.to_vec()) {
+                            message_id = Some(id);
+                        }
+                    }
+                    _ => {
+                        // Other fields - skip
+                    }
+                }
+                
+                pos += length;
+            } else {
+                break;
+            }
+        } else {
+            // Skip other wire types
+            break;
+        }
+    }
+    
+    if let Some(text) = message_text {
+        Some((text, message_id))
+    } else {
+        None
+    }
+}
+
 /// Extract JSON message from blob data
-/// The blob contains protobuf-wrapped JSON. We extract the JSON substring.
+/// The blob can contain either protobuf-wrapped JSON or pure protobuf messages.
+/// This function handles both formats.
 fn extract_json_from_blob(blob_data: &[u8]) -> Result<Value, AppError> {
     // Convert to string, looking for JSON content
     let data_str = String::from_utf8_lossy(blob_data);
 
-    // Find JSON object (starts with { and contains "role")
+    // First, try to find JSON object (starts with { and contains "role")
     if let Some(start) = data_str.find('{') {
         if let Some(end) = data_str.rfind('}') {
             if end > start {
@@ -78,7 +156,26 @@ fn extract_json_from_blob(blob_data: &[u8]) -> Result<Value, AppError> {
         }
     }
 
-    // No JSON found, return minimal structure
+    // No JSON found - try protobuf decoding
+    if let Some((text, msg_id)) = decode_protobuf_fields(blob_data) {
+        tracing::debug!("Protobuf decoded: text_len={}, msg_id={:?}", text.len(), msg_id);
+        
+        // Create message structure with extracted text
+        let mut msg = json!({
+            "role": "user",  // Will be corrected by caller based on position
+            "content": [{"text": text.clone()}],
+            "text": text
+        });
+        
+        if let Some(id) = msg_id {
+            msg["id"] = json!(id);
+        }
+        
+        return Ok(msg);
+    }
+
+    // No content found at all, return minimal structure
+    tracing::debug!("No content found in blob");
     Ok(json!({}))
 }
 
@@ -108,6 +205,7 @@ pub fn get_chat_messages_from_agent(
 
     let mut messages = Vec::new();
     let mut blob_count = 0;
+    let mut message_index = 0;
 
     for row in rows {
         let (blob_id, data) =
@@ -117,17 +215,26 @@ pub fn get_chat_messages_from_agent(
         if include_content {
             // Try to extract JSON message
             match extract_json_from_blob(&data) {
-                Ok(json_msg) if json_msg.get("role").is_some() => {
-                    let role = json_msg["role"].as_str().unwrap_or("unknown");
+                Ok(mut json_msg) if json_msg.get("role").is_some() || json_msg.get("text").is_some() => {
+                    // Determine role: alternate between user (odd index) and assistant (even index)
+                    // Starting with user (index 0 = user)
+                    let role = if message_index % 2 == 0 {
+                        "user"
+                    } else {
+                        "assistant"
+                    };
                     let role_type = if role == "user" { 1 } else { 2 };
+                    
+                    // Update role in json_msg if it was set to default
+                    json_msg["role"] = json!(role);
 
                     // Extract text content
                     let text = if let Some(text_field) = json_msg.get("text") {
-                        // Assistant messages often have top-level "text"
+                        // Direct text field
                         text_field.as_str().unwrap_or("").to_string()
                     } else if let Some(content) = json_msg.get("content").and_then(|c| c.as_array())
                     {
-                        // User messages have content array
+                        // Content array
                         content
                             .iter()
                             .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
@@ -144,6 +251,8 @@ pub fn get_chat_messages_from_agent(
                         "text": text,
                         "is_remote": false,  // Local cursor-agent chat
                     }));
+                    
+                    message_index += 1;
                 }
                 _ => {
                     // Non-message blob (state/metadata), skip it

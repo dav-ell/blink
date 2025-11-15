@@ -62,6 +62,13 @@ class BlinkApiClient:
     
     # Chat Management
     
+    async def create_local_chat(self, name: Optional[str] = None) -> Dict[str, Any]:
+        """Create a new local cursor-agent chat"""
+        data = {}
+        if name:
+            data["name"] = name
+        return await self.post("/agent/create-chat", data)
+    
     async def create_remote_chat(self, device_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new chat on a remote device"""
         return await self.post(f"/devices/{device_id}/create-chat", data)
@@ -115,6 +122,52 @@ class BlinkApiClient:
 def get_tool_definitions() -> List[Dict[str, Any]]:
     """Return MCP tool definitions"""
     return [
+        {
+            "name": "create_local_chat",
+            "description": "Create a new local cursor-agent chat on this machine. Returns chat_id for sending tasks. Use this to create agents that work locally (not on remote devices).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Optional chat name for organization"
+                    }
+                },
+                "required": []
+            }
+        },
+        {
+            "name": "send_local_task",
+            "description": "Delegate a task to a local cursor-agent. The agent runs on your local machine with access to the local filesystem. By default (wait=True), this blocks until the task completes. Set wait=False for fire-and-forget.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "chat_id": {
+                        "type": "string",
+                        "description": "Chat UUID (from create_local_chat)"
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Task description or question for the local agent"
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "AI model to use (e.g., 'sonnet-4.5-thinking', 'gpt-5')"
+                    },
+                    "wait": {
+                        "type": "boolean",
+                        "description": "Wait for completion before returning (default: true)",
+                        "default": True
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Maximum seconds to wait if wait=true (default: 300)",
+                        "default": 300
+                    }
+                },
+                "required": ["chat_id", "prompt"]
+            }
+        },
         {
             "name": "list_remote_devices",
             "description": "List all configured remote devices (SSH-accessible machines). Returns device ID, name, hostname, and connection status. Use this to find available devices before creating remote chats.",
@@ -302,7 +355,68 @@ def get_tool_definitions() -> List[Dict[str, Any]]:
 async def handle_tool_call(client: BlinkApiClient, name: str, arguments: Dict[str, Any]) -> str:
     """Handle individual tool invocations"""
     
-    if name == "list_remote_devices":
+    if name == "create_local_chat":
+        name_arg = arguments.get("name")
+        result = await client.create_local_chat(name=name_arg)
+        
+        return (
+            f"✅ **Local Chat Created**\n\n"
+            f"Chat ID: {result.get('chat_id', '')}\n"
+            f"Location: Local machine\n"
+            f"Status: {result.get('status', 'unknown')}\n\n"
+            f"💡 Use this chat_id with `send_local_task` to delegate work."
+        )
+    
+    elif name == "send_local_task":
+        chat_id = arguments.get("chat_id")
+        if not chat_id:
+            raise ValueError("Missing chat_id")
+        
+        wait = arguments.get("wait", True)
+        
+        prompt_data = {
+            "prompt": arguments.get("prompt")
+        }
+        if arguments.get("model"):
+            prompt_data["model"] = arguments.get("model")
+        
+        if not wait:
+            # Use async endpoint (returns immediately with job_id, job executes in background)
+            job_result = await client.send_prompt_async(chat_id, prompt_data)
+            job_id = job_result.get("job_id")
+            if not job_id:
+                raise ValueError("Missing job_id in response")
+            
+            return (
+                f"🚀 **Local Task Submitted**\n\n"
+                f"Job ID: {job_id}\n\n"
+                f"💡 Use `get_job_result` to check status."
+            )
+        else:
+            # Use async endpoint but wait for completion
+            job_result = await client.send_prompt_async(chat_id, prompt_data)
+            job_id = job_result.get("job_id")
+            if not job_id:
+                raise ValueError("Missing job_id in response")
+            
+            timeout = arguments.get("timeout", 300)
+            
+            # Wait for completion
+            job = await client.wait_for_job(job_id, timeout)
+            result = job.get("result", {})
+            
+            if not result:
+                return f"❌ **Task Failed**\n\nNo result returned from agent."
+            
+            output = f"✅ **Local Task Complete**\n\n"
+            output += f"**Agent Response:**\n{result.get('response', 'No response')}\n\n"
+            
+            if result.get("error"):
+                output += f"**Errors:** {result.get('error')}\n"
+            
+            return output
+    
+    elif name == "list_remote_devices":
         devices = await client.list_devices()
         if not devices:
             return "No remote devices configured. Use add_remote_device to register a new device."

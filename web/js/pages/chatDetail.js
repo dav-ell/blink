@@ -117,13 +117,39 @@ class ChatDetailPage {
     async loadChat() {
         this.showLoading();
 
+        // Log start of chat loading
+        console.log('[ChatDetail] === Loading chat ===', {
+            chatId: this.chatId,
+            timestamp: new Date().toISOString()
+        });
+
         try {
             const response = await apiClient.getChatMessages(this.chatId, {
                 includeMetadata: true,
                 includeContent: true,
             });
 
+            // Log received response details
+            console.log('[ChatDetail] Received response:', {
+                messageCount: response.messages?.length || 0,
+                hasMessages: Array.isArray(response.messages),
+                hasMetadata: !!response.metadata,
+                metadataKeys: response.metadata ? Object.keys(response.metadata) : [],
+                responseKeys: Object.keys(response)
+            });
+
             this.messages = response.messages.map(msgData => Message.fromJson(msgData));
+            
+            // Log parsed messages
+            console.log('[ChatDetail] Parsed messages:', {
+                parsedCount: this.messages.length,
+                sampleMessage: this.messages[0] ? {
+                    id: this.messages[0].id,
+                    role: this.messages[0].role,
+                    contentLength: this.messages[0].content?.length || 0
+                } : null
+            });
+
             this.chatMetadata = response.metadata;
             
             // Create Chat object from metadata to detect if remote
@@ -132,6 +158,14 @@ class ChatDetailPage {
                     ...this.chatMetadata,
                     chat_id: this.chatId,
                     messages: this.messages,
+                });
+                
+                // Log metadata loaded
+                console.log('[ChatDetail] Metadata loaded:', {
+                    chatName: this.chatMetadata.name,
+                    format: this.chatMetadata.format,
+                    location: this.chat.location,
+                    isRemote: this.chat.isRemote
                 });
             }
 
@@ -152,8 +186,17 @@ class ChatDetailPage {
             if (this.getAllMessages().length === 0) {
                 this.showEmpty();
             }
+
+            // Log successful completion
+            console.log('[ChatDetail] === Chat loaded successfully ===');
         } catch (error) {
-            console.error('Failed to load chat:', error);
+            // Log error with full context
+            console.error('[ChatDetail] Failed to load chat:', {
+                chatId: this.chatId,
+                error: error.message,
+                stack: error.stack,
+                timestamp: new Date().toISOString()
+            });
             this.showError(error.message);
         }
     }
