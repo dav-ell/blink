@@ -63,19 +63,19 @@ impl MetricsCollector {
             })),
         }
     }
-    
+
     /// Increment a counter by 1
     pub fn increment_counter(&self, name: &str) {
         self.add_counter(name, 1);
     }
-    
+
     /// Add to a counter
     pub fn add_counter(&self, name: &str, value: u64) {
         if let Ok(mut inner) = self.inner.write() {
             *inner.counters.entry(name.to_string()).or_insert(0) += value;
         }
     }
-    
+
     /// Record a value in a histogram
     pub fn record_histogram(&self, name: &str, value: f64) {
         if let Ok(mut inner) = self.inner.write() {
@@ -86,19 +86,19 @@ impl MetricsCollector {
                 .push(value);
         }
     }
-    
+
     /// Set a gauge value
     pub fn set_gauge(&self, name: &str, value: f64) {
         if let Ok(mut inner) = self.inner.write() {
             inner.gauges.insert(name.to_string(), value);
         }
     }
-    
+
     /// Record a duration in milliseconds
     pub fn record_duration(&self, name: &str, duration: Duration) {
         self.record_histogram(name, duration.as_millis() as f64);
     }
-    
+
     /// Get a snapshot of current metrics
     pub fn snapshot(&self) -> MetricsSnapshot {
         let inner = self.inner.read().unwrap();
@@ -106,18 +106,18 @@ impl MetricsCollector {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         let uptime = SystemTime::now()
             .duration_since(inner.last_reset)
             .unwrap()
             .as_secs();
-        
+
         let histograms = inner
             .histograms
             .iter()
             .map(|(name, values)| (name.clone(), calculate_histogram_stats(values)))
             .collect();
-        
+
         MetricsSnapshot {
             timestamp: now,
             uptime_seconds: uptime,
@@ -126,7 +126,7 @@ impl MetricsCollector {
             gauges: inner.gauges.clone(),
         }
     }
-    
+
     /// Reset all metrics
     pub fn reset(&self) {
         if let Ok(mut inner) = self.inner.write() {
@@ -136,7 +136,7 @@ impl MetricsCollector {
             inner.last_reset = SystemTime::now();
         }
     }
-    
+
     /// Export metrics to JSON string
     pub fn export_json(&self) -> Result<String, serde_json::Error> {
         let snapshot = self.snapshot();
@@ -164,14 +164,14 @@ fn calculate_histogram_stats(values: &[f64]) -> HistogramStats {
             p99: 0.0,
         };
     }
-    
+
     let mut sorted = values.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    
+
     let count = sorted.len();
     let sum: f64 = sorted.iter().sum();
     let mean = sum / count as f64;
-    
+
     HistogramStats {
         count,
         sum,
@@ -196,35 +196,35 @@ pub mod metric_names {
     pub const HTTP_REQUESTS_TOTAL: &str = "http_requests_total";
     pub const HTTP_REQUEST_DURATION_MS: &str = "http_request_duration_ms";
     pub const HTTP_REQUESTS_ERROR: &str = "http_requests_error";
-    
+
     // Agent execution metrics
     pub const AGENT_EXECUTIONS_TOTAL: &str = "agent_executions_total";
     pub const AGENT_EXECUTION_DURATION_MS: &str = "agent_execution_duration_ms";
     pub const AGENT_EXECUTIONS_ERROR: &str = "agent_executions_error";
     pub const AGENT_EXECUTIONS_TIMEOUT: &str = "agent_executions_timeout";
-    
+
     // SSH metrics
     pub const SSH_CONNECTIONS_TOTAL: &str = "ssh_connections_total";
     pub const SSH_CONNECTION_DURATION_MS: &str = "ssh_connection_duration_ms";
     pub const SSH_CONNECTIONS_ERROR: &str = "ssh_connections_error";
-    
+
     // HTTP client metrics
     pub const HTTP_CLIENT_REQUESTS_TOTAL: &str = "http_client_requests_total";
     pub const HTTP_CLIENT_REQUEST_DURATION_MS: &str = "http_client_request_duration_ms";
     pub const HTTP_CLIENT_REQUESTS_ERROR: &str = "http_client_requests_error";
-    
+
     // Retry metrics
     pub const RETRY_ATTEMPTS_TOTAL: &str = "retry_attempts_total";
     pub const RETRY_SUCCESS_TOTAL: &str = "retry_success_total";
     pub const RETRY_EXHAUSTED_TOTAL: &str = "retry_exhausted_total";
-    
+
     // Job metrics
     pub const JOBS_CREATED_TOTAL: &str = "jobs_created_total";
     pub const JOBS_COMPLETED_TOTAL: &str = "jobs_completed_total";
     pub const JOBS_FAILED_TOTAL: &str = "jobs_failed_total";
     pub const JOBS_CANCELLED_TOTAL: &str = "jobs_cancelled_total";
     pub const JOB_DURATION_MS: &str = "job_duration_ms";
-    
+
     // Gauges
     pub const ACTIVE_CONNECTIONS: &str = "active_connections";
     pub const ACTIVE_JOBS: &str = "active_jobs";
@@ -234,18 +234,18 @@ pub mod metric_names {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_counter() {
         let metrics = MetricsCollector::new();
         metrics.increment_counter("test_counter");
         metrics.increment_counter("test_counter");
         metrics.add_counter("test_counter", 3);
-        
+
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.counters.get("test_counter"), Some(&5));
     }
-    
+
     #[test]
     fn test_histogram() {
         let metrics = MetricsCollector::new();
@@ -254,43 +254,42 @@ mod tests {
         metrics.record_histogram("test_histogram", 3.0);
         metrics.record_histogram("test_histogram", 4.0);
         metrics.record_histogram("test_histogram", 5.0);
-        
+
         let snapshot = metrics.snapshot();
         let stats = snapshot.histograms.get("test_histogram").unwrap();
-        
+
         assert_eq!(stats.count, 5);
         assert_eq!(stats.min, 1.0);
         assert_eq!(stats.max, 5.0);
         assert_eq!(stats.mean, 3.0);
     }
-    
+
     #[test]
     fn test_gauge() {
         let metrics = MetricsCollector::new();
         metrics.set_gauge("test_gauge", 42.5);
-        
+
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.gauges.get("test_gauge"), Some(&42.5));
     }
-    
+
     #[test]
     fn test_reset() {
         let metrics = MetricsCollector::new();
         metrics.increment_counter("test");
         metrics.reset();
-        
+
         let snapshot = metrics.snapshot();
         assert!(snapshot.counters.is_empty());
     }
-    
+
     #[test]
     fn test_export_json() {
         let metrics = MetricsCollector::new();
         metrics.increment_counter("test");
-        
+
         let json = metrics.export_json();
         assert!(json.is_ok());
         assert!(json.unwrap().contains("test"));
     }
 }
-

@@ -15,6 +15,16 @@ export function createChatCard(chat) {
     const statusClass = chat.status === 'active' ? 'badge-active' : 'badge-archived';
     const statusText = chat.status.charAt(0).toUpperCase() + chat.status.slice(1);
 
+    // Build format badge for cursor-agent chats
+    let formatBadgeHtml = '';
+    if (chat.isCursorAgent) {
+        formatBadgeHtml = `
+            <span class="badge badge-cursor-agent" style="background-color: var(--color-accent, #7c3aed); color: white;">
+                🤖 cursor-agent
+            </span>
+        `;
+    }
+
     // Build remote info HTML if chat is remote
     let remoteInfoHtml = '';
     if (chat.isRemote && chat.remoteInfo) {
@@ -37,6 +47,7 @@ export function createChatCard(chat) {
                 <div class="chat-card-title">${escapeHtml(chat.title)}</div>
                 <div class="chat-card-meta">
                     <span>${Formatter.formatTime(chat.lastMessageAt)}</span>
+                    ${formatBadgeHtml}
                     <span class="badge ${statusClass}">${statusText}</span>
                 </div>
             </div>

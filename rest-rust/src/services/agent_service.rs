@@ -10,6 +10,7 @@ pub const AVAILABLE_MODELS: &[&str] = &[
     "auto",
     "sonnet-4.5",
     "sonnet-4.5-thinking",
+    "claude-4.5-sonnet",
     "gpt-5",
     "gpt-5-codex",
     "gpt-5-codex-high",
@@ -38,7 +39,7 @@ pub async fn run_cursor_agent(
 ) -> Result<AgentResponse> {
     // Set default model if not specified
     let model = model.unwrap_or("sonnet-4.5-thinking");
-    
+
     // Validate model
     if !AVAILABLE_MODELS.contains(&model) {
         return Err(crate::AppError::BadRequest(format!(
@@ -47,11 +48,11 @@ pub async fn run_cursor_agent(
             AVAILABLE_MODELS.join(", ")
         )));
     }
-    
+
     // Build command
     let cursor_agent_path = &settings.cursor_agent_path;
     let mut cmd = Command::new(cursor_agent_path);
-    
+
     cmd.arg("--print")
         .arg("--force")
         .arg("--model")
@@ -61,7 +62,7 @@ pub async fn run_cursor_agent(
         .arg("--resume")
         .arg(chat_id)
         .arg(prompt);
-    
+
     let command_str = format!(
         "{} --print --force --model {} --output-format {} --resume {} {}",
         cursor_agent_path.display(),
@@ -70,17 +71,17 @@ pub async fn run_cursor_agent(
         chat_id,
         prompt
     );
-    
+
     // Execute with timeout
     let result = timeout(Duration::from_secs(timeout_secs), cmd.output()).await;
-    
+
     match result {
         Ok(Ok(output)) => {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             let returncode = output.status.code().unwrap_or(-1);
             let success = output.status.success();
-            
+
             let mut response = AgentResponse {
                 stdout: stdout.clone(),
                 stderr,
@@ -90,7 +91,7 @@ pub async fn run_cursor_agent(
                 parsed_content: None,
                 parse_error: None,
             };
-            
+
             // Parse stream-json output if format is stream-json
             if output_format == "stream-json" && success {
                 match parse_cursor_agent_output(&stdout) {
@@ -110,7 +111,7 @@ pub async fn run_cursor_agent(
                     }
                 }
             }
-            
+
             Ok(response)
         }
         Ok(Err(e)) => {
@@ -139,4 +140,3 @@ pub async fn run_cursor_agent(
         }
     }
 }
-

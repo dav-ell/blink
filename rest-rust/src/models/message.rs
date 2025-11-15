@@ -87,4 +87,3 @@ pub struct MessageCreate {
 fn default_message_type() -> i32 {
     1
 }
-

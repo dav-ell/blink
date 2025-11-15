@@ -1,5 +1,7 @@
 use crate::{
-    models::device::{Device, DeviceCreate, DeviceStatus, DeviceUpdate, RemoteChat, RemoteChatCreate},
+    models::device::{
+        Device, DeviceCreate, DeviceStatus, DeviceUpdate, RemoteChat, RemoteChatCreate,
+    },
     services, AppError, AppState, Result,
 };
 use axum::{
@@ -16,7 +18,6 @@ pub struct ListDevicesQuery {
     include_inactive: bool,
 }
 
-
 #[derive(Deserialize)]
 pub struct RemoteChatListQuery {
     device_id: Option<String>,
@@ -28,7 +29,7 @@ pub async fn create_device(
     Json(device_create): Json<DeviceCreate>,
 ) -> Result<Json<Value>> {
     let device = services::create_device(&state.job_pool, device_create).await?;
-    
+
     Ok(Json(json!({
         "status": "success",
         "device": device
@@ -41,12 +42,12 @@ pub async fn list_devices(
     Query(query): Query<ListDevicesQuery>,
 ) -> Result<Json<Value>> {
     let mut devices = services::get_all_devices(&state.job_pool).await?;
-    
+
     // Filter inactive devices if requested
     if !query.include_inactive {
         devices.retain(|d| d.is_active);
     }
-    
+
     Ok(Json(json!({
         "total": devices.len(),
         "devices": devices
@@ -60,8 +61,11 @@ pub async fn get_device(
 ) -> Result<Json<Device>> {
     let device = services::get_device(&state.job_pool, &device_id)
         .await?
-        .ok_or(AppError::NotFound(format!("Device not found: {}", device_id)))?;
-    
+        .ok_or(AppError::NotFound(format!(
+            "Device not found: {}",
+            device_id
+        )))?;
+
     Ok(Json(device))
 }
 
@@ -74,8 +78,11 @@ pub async fn update_device(
     // Get existing device
     let mut device = services::get_device(&state.job_pool, &device_id)
         .await?
-        .ok_or(AppError::NotFound(format!("Device not found: {}", device_id)))?;
-    
+        .ok_or(AppError::NotFound(format!(
+            "Device not found: {}",
+            device_id
+        )))?;
+
     // Apply updates
     if let Some(name) = update.name {
         device.name = name;
@@ -89,7 +96,7 @@ pub async fn update_device(
     if update.cursor_agent_path.is_some() {
         device.cursor_agent_path = update.cursor_agent_path;
     }
-    
+
     // Update in database
     sqlx::query(
         r#"
@@ -105,7 +112,7 @@ pub async fn update_device(
     .bind(&device_id)
     .execute(&state.job_pool)
     .await?;
-    
+
     Ok(Json(json!({
         "status": "success",
         "device": device
@@ -120,10 +127,13 @@ pub async fn delete_device(
     // Check if device exists
     let _device = services::get_device(&state.job_pool, &device_id)
         .await?
-        .ok_or(AppError::NotFound(format!("Device not found: {}", device_id)))?;
-    
+        .ok_or(AppError::NotFound(format!(
+            "Device not found: {}",
+            device_id
+        )))?;
+
     services::delete_device(&state.job_pool, &device_id).await?;
-    
+
     Ok(Json(json!({
         "status": "success",
         "message": "Device deleted successfully"
@@ -137,22 +147,22 @@ pub async fn test_device_connection(
 ) -> Result<Json<Value>> {
     let device = services::get_device(&state.job_pool, &device_id)
         .await?
-        .ok_or(AppError::NotFound(format!("Device not found: {}", device_id)))?;
-    
-    let response = services::test_http_connection(&device, state.settings.remote_agent_connect_timeout).await?;
-    
+        .ok_or(AppError::NotFound(format!(
+            "Device not found: {}",
+            device_id
+        )))?;
+
+    let response =
+        services::test_http_connection(&device, state.settings.remote_agent_connect_timeout)
+            .await?;
+
     // Update device status
     if response.success {
         services::update_device_last_seen(&state.job_pool, &device_id).await?;
     } else {
-        services::update_device_status(
-            &state.job_pool,
-            &device_id,
-            DeviceStatus::Offline,
-        )
-        .await?;
+        services::update_device_status(&state.job_pool, &device_id, DeviceStatus::Offline).await?;
     }
-    
+
     Ok(Json(json!({
         "success": response.success,
         "returncode": response.returncode,
@@ -170,14 +180,15 @@ pub async fn verify_agent_installed(
 ) -> Result<Json<Value>> {
     let device = services::get_device(&state.job_pool, &device_id)
         .await?
-        .ok_or(AppError::NotFound(format!("Device not found: {}", device_id)))?;
-    
-    let response = services::test_http_connection(
-        &device,
-        state.settings.remote_agent_connect_timeout,
-    )
-    .await?;
-    
+        .ok_or(AppError::NotFound(format!(
+            "Device not found: {}",
+            device_id
+        )))?;
+
+    let response =
+        services::test_http_connection(&device, state.settings.remote_agent_connect_timeout)
+            .await?;
+
     Ok(Json(json!({
         "installed": response.success,
         "success": response.success,
@@ -196,27 +207,30 @@ pub async fn create_device_chat(
     // Get device
     let device = services::get_device(&state.job_pool, &device_id)
         .await?
-        .ok_or(AppError::NotFound(format!("Device not found: {}", device_id)))?;
-    
+        .ok_or(AppError::NotFound(format!(
+            "Device not found: {}",
+            device_id
+        )))?;
+
     // Set device_id on the create request
     chat_create.device_id = device_id.clone();
-    
+
     // Create chat via SSH on remote device
     let chat_id = uuid::Uuid::new_v4().to_string();
-    
+
     // Store remote chat association
     let remote_chat = services::create_remote_chat(&state.job_pool, chat_create).await?;
-    
+
     // Update device last_seen
     services::update_device_last_seen(&state.job_pool, &device_id).await?;
-    
+
     tracing::info!(
         "Created remote chat {} on device {} ({})",
         chat_id,
         device.name,
         device_id
     );
-    
+
     Ok(Json(json!({
         "status": "success",
         "chat_id": chat_id,
@@ -252,7 +266,7 @@ pub async fn list_remote_chats(
         .map(Into::into)
         .collect()
     };
-    
+
     // Enrich with device information
     let mut chat_list = Vec::new();
     for chat in chats {
@@ -261,7 +275,10 @@ pub async fn list_remote_chats(
         if let Some(obj) = chat_json.as_object_mut() {
             obj.insert(
                 "device_name".to_string(),
-                json!(device.as_ref().map(|d| d.name.as_str()).unwrap_or("Unknown")),
+                json!(device
+                    .as_ref()
+                    .map(|d| d.name.as_str())
+                    .unwrap_or("Unknown")),
             );
             obj.insert(
                 "device_status".to_string(),
@@ -277,7 +294,7 @@ pub async fn list_remote_chats(
         }
         chat_list.push(chat_json);
     }
-    
+
     Ok(Json(json!({
         "total": chat_list.len(),
         "chats": chat_list
@@ -293,8 +310,11 @@ pub async fn send_remote_prompt(
     // Get remote chat
     let remote_chat = services::get_remote_chat(&state.job_pool, &chat_id)
         .await?
-        .ok_or(AppError::NotFound(format!("Remote chat not found: {}", chat_id)))?;
-    
+        .ok_or(AppError::NotFound(format!(
+            "Remote chat not found: {}",
+            chat_id
+        )))?;
+
     // Get device
     let device = services::get_device(&state.job_pool, &remote_chat.device_id)
         .await?
@@ -302,14 +322,14 @@ pub async fn send_remote_prompt(
             "Device not found: {}",
             remote_chat.device_id
         )))?;
-    
+
     // Execute cursor-agent remotely via HTTP
     let model_str = if !request.model.is_empty() {
         Some(request.model.as_str())
     } else {
         None
     };
-    
+
     let response = services::execute_remote_cursor_agent(
         &state.settings,
         &device,
@@ -320,22 +340,22 @@ pub async fn send_remote_prompt(
         "stream-json",
     )
     .await?;
-    
+
     if !response.success {
         return Err(AppError::CursorAgent(format!(
             "Failed to execute remote command: {}",
             response.stderr
         )));
     }
-    
+
     // Parse the agent output
     let parsed_output = crate::utils::parse_cursor_agent_output(&response.stdout)
         .map_err(|e| AppError::Internal(format!("Failed to parse agent output: {}", e)))?;
-    
+
     // Create a simple output structure for response
     let output_text = parsed_output.text.clone();
     let output_thinking = parsed_output.thinking.clone();
-    
+
     // Update remote chat metadata with text preview
     let preview = if output_text.len() > 200 {
         Some(&output_text[..200])
@@ -343,10 +363,10 @@ pub async fn send_remote_prompt(
         Some(output_text.as_str())
     };
     services::update_remote_chat_metadata(&state.job_pool, &chat_id, preview).await?;
-    
+
     // Update device last_seen
     services::update_device_last_seen(&state.job_pool, &remote_chat.device_id).await?;
-    
+
     Ok(Json(json!({
         "chat_id": chat_id,
         "device_id": device.id,

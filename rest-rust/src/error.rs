@@ -56,23 +56,23 @@ impl AppError {
             AppError::Http(_) => true,
             AppError::Ssh(_) => true,
             AppError::Io(_) => true,
-            
+
             // Non-retryable errors - client errors or permanent failures
             AppError::NotFound(_) => false,
             AppError::BadRequest(_) => false,
             AppError::Validation(_) => false,
             AppError::Json(_) => false,
-            
+
             // Database and internal errors - could be transient
             AppError::Database(_) => true,
             AppError::SqlxDatabase(_) => true,
             AppError::Internal(_) => false, // Generally not retryable
-            
+
             // Cursor agent errors - depends on the error
             AppError::CursorAgent(_) => false, // Default to non-retryable
         }
     }
-    
+
     /// Get the error category for logging and metrics
     pub fn category(&self) -> &'static str {
         match self {
@@ -89,7 +89,7 @@ impl AppError {
             AppError::Timeout(_) => "timeout",
         }
     }
-    
+
     /// Add context to an error
     pub fn with_context(self, context: &str) -> Self {
         match self {
@@ -115,7 +115,7 @@ impl IntoResponse for AppError {
         let category = self.category();
         let is_retryable = self.is_retryable();
         let correlation_id = crate::utils::request_context::get_correlation_id();
-        
+
         let (status, error_message) = match self {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
@@ -128,14 +128,14 @@ impl IntoResponse for AppError {
             AppError::Timeout(msg) => (StatusCode::GATEWAY_TIMEOUT, msg),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", self)),
         };
-        
+
         let mut json_body = json!({
             "error": error_message,
             "status": status.as_u16(),
             "category": category,
             "retryable": is_retryable,
         });
-        
+
         if let Some(corr_id) = correlation_id {
             json_body["correlation_id"] = json!(corr_id);
         }
@@ -145,4 +145,3 @@ impl IntoResponse for AppError {
         (status, body).into_response()
     }
 }
-

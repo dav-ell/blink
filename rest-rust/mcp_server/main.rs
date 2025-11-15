@@ -1,14 +1,14 @@
 /*!
  * Blink MCP Server - Model Context Protocol server for LLM agent control
- * 
+ *
  * This MCP server exposes Blink's remote agent functionality to LLM agents
  * running in Cursor IDE. It provides tools for device management, chat creation,
  * and task delegation to remote cursor-agent instances.
  */
 
+use reqwest::Client;
 use serde_json::{json, Value};
 use std::error::Error;
-use reqwest::Client;
 
 const API_BASE_URL: &str = "http://localhost:8067";
 
@@ -42,7 +42,8 @@ impl BlinkApiClient {
     // Device Management
     async fn list_devices(&self) -> Result<Vec<Value>, Box<dyn Error>> {
         let result = self.get("/devices").await?;
-        let devices = result["devices"].as_array()
+        let devices = result["devices"]
+            .as_array()
             .ok_or("Invalid response: missing devices array")?
             .clone();
         Ok(devices)
@@ -53,16 +54,23 @@ impl BlinkApiClient {
     }
 
     async fn test_device_connection(&self, device_id: &str) -> Result<Value, Box<dyn Error>> {
-        self.post(&format!("/devices/{}/test", device_id), json!({})).await
+        self.post(&format!("/devices/{}/test", device_id), json!({}))
+            .await
     }
 
     // Chat Management
-    async fn create_remote_chat(&self, device_id: &str, data: Value) -> Result<Value, Box<dyn Error>> {
-        self.post(&format!("/devices/{}/create-chat", device_id), data).await
+    async fn create_remote_chat(
+        &self,
+        device_id: &str,
+        data: Value,
+    ) -> Result<Value, Box<dyn Error>> {
+        self.post(&format!("/devices/{}/create-chat", device_id), data)
+            .await
     }
 
     async fn send_prompt_async(&self, chat_id: &str, data: Value) -> Result<Value, Box<dyn Error>> {
-        self.post(&format!("/chats/{}/agent-prompt-async", chat_id), data).await
+        self.post(&format!("/chats/{}/agent-prompt-async", chat_id), data)
+            .await
     }
 
     async fn get_job_status(&self, job_id: &str) -> Result<Value, Box<dyn Error>> {
@@ -74,7 +82,7 @@ impl BlinkApiClient {
         loop {
             let job = self.get_job_status(job_id).await?;
             let status = job["status"].as_str().unwrap_or("unknown");
-            
+
             match status {
                 "completed" => return Ok(job),
                 "failed" => return Err(format!("Job failed: {:?}", job["error"]).into()),
@@ -87,6 +95,31 @@ impl BlinkApiClient {
                 }
             }
         }
+    }
+
+    // Context Management
+    async fn get_chat_messages(
+        &self,
+        chat_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Value, Box<dyn Error>> {
+        let mut url = format!(
+            "/chats/{}?include_metadata=true&include_content=true",
+            chat_id
+        );
+        if let Some(l) = limit {
+            url = format!("{}&limit={}", url, l);
+        }
+        self.get(&url).await
+    }
+
+    async fn list_remote_chats(&self) -> Result<Vec<Value>, Box<dyn Error>> {
+        let result = self.get("/remote-chats").await?;
+        let chats = result["chats"]
+            .as_array()
+            .ok_or("Invalid response: missing chats array")?
+            .clone();
+        Ok(chats)
     }
 }
 
@@ -171,7 +204,7 @@ fn get_tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "send_remote_task",
-            "description": "Delegate a task to a remote cursor-agent. By default (wait=True), this blocks until the task completes and returns the result. Set wait=False for fire-and-forget.",
+            "description": "Delegate a task to a remote cursor-agent. Each call to an existing chat has access to all previous messages - context is automatically maintained by cursor-agent. By default (wait=True), this blocks until the task completes and returns the result. Set wait=False for fire-and-forget. For better multi-turn UX, use get_chat_history first, then continue_conversation.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -215,6 +248,65 @@ fn get_tool_definitions() -> Vec<Value> {
                 "required": ["job_id"]
             }
         }),
+        json!({
+            "name": "get_chat_history",
+            "description": "Retrieve conversation history from a chat. Shows all messages exchanged with the remote agent. Use this to understand context before sending follow-up tasks. Works with both remote and local chats.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "chat_id": {
+                        "type": "string",
+                        "description": "Chat UUID (from create_remote_chat or existing chat)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of messages to retrieve (default: all messages)"
+                    }
+                },
+                "required": ["chat_id"]
+            }
+        }),
+        json!({
+            "name": "continue_conversation",
+            "description": "Continue an existing conversation by sending a follow-up message. The remote agent has full access to all previous messages in the chat. Context is automatically maintained by cursor-agent. This is semantically clearer than send_remote_task for multi-turn conversations.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "chat_id": {
+                        "type": "string",
+                        "description": "Chat UUID (from create_remote_chat)"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Your follow-up message or question"
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "AI model to use (e.g., 'sonnet-4.5-thinking', 'gpt-5')"
+                    },
+                    "wait": {
+                        "type": "boolean",
+                        "description": "Wait for completion before returning (default: true)",
+                        "default": true
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Maximum seconds to wait if wait=true (default: 300)",
+                        "default": 300
+                    }
+                },
+                "required": ["chat_id", "message"]
+            }
+        }),
+        json!({
+            "name": "list_remote_chats",
+            "description": "List all active remote chat sessions. Shows chat ID, device, working directory, message count, and last activity. Use this to find existing chats before creating new ones.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }),
     ]
 }
 
@@ -227,9 +319,12 @@ async fn handle_tool_call(
         "list_remote_devices" => {
             let devices = client.list_devices().await?;
             if devices.is_empty() {
-                return Ok("No remote devices configured. Use add_remote_device to register a new device.".to_string());
+                return Ok(
+                    "No remote devices configured. Use add_remote_device to register a new device."
+                        .to_string(),
+                );
             }
-            
+
             let mut output = String::from("📱 **Remote Devices:**\n\n");
             for device in &devices {
                 output.push_str(&format!(
@@ -260,10 +355,9 @@ async fn handle_tool_call(
         }
 
         "test_device_connection" => {
-            let device_id = arguments["device_id"].as_str()
-                .ok_or("Missing device_id")?;
+            let device_id = arguments["device_id"].as_str().ok_or("Missing device_id")?;
             let result = client.test_device_connection(device_id).await?;
-            
+
             if result["success"].as_bool().unwrap_or(false) {
                 Ok(format!(
                     "✅ **Connection Successful**\n\n\
@@ -283,10 +377,11 @@ async fn handle_tool_call(
         }
 
         "create_remote_chat" => {
-            let device_id = arguments["device_id"].as_str()
-                .ok_or("Missing device_id")?;
-            let result = client.create_remote_chat(device_id, arguments.clone()).await?;
-            
+            let device_id = arguments["device_id"].as_str().ok_or("Missing device_id")?;
+            let result = client
+                .create_remote_chat(device_id, arguments.clone())
+                .await?;
+
             Ok(format!(
                 "✅ **Remote Chat Created**\n\n\
                  Chat ID: {}\n\
@@ -300,20 +395,20 @@ async fn handle_tool_call(
         }
 
         "send_remote_task" => {
-            let chat_id = arguments["chat_id"].as_str()
-                .ok_or("Missing chat_id")?;
+            let chat_id = arguments["chat_id"].as_str().ok_or("Missing chat_id")?;
             let wait = arguments["wait"].as_bool().unwrap_or(true);
             let timeout = arguments["timeout"].as_i64().unwrap_or(300) as u64;
-            
+
             let prompt_data = json!({
                 "prompt": arguments["prompt"],
                 "model": arguments.get("model")
             });
-            
+
             let job_result = client.send_prompt_async(chat_id, prompt_data).await?;
-            let job_id = job_result["job_id"].as_str()
+            let job_id = job_result["job_id"]
+                .as_str()
                 .ok_or("Missing job_id in response")?;
-            
+
             if !wait {
                 return Ok(format!(
                     "🚀 **Task Submitted**\n\n\
@@ -322,127 +417,335 @@ async fn handle_tool_call(
                     job_id
                 ));
             }
-            
+
             // Wait for completion
             let job = client.wait_for_job(job_id, timeout).await?;
             let result = &job["result"];
-            
+
             Ok(format!(
                 "✅ **Task Completed**\n\n\
                  **Agent Response:**\n{}\n\n\
                  Job ID: {}",
-                result["content"]["assistant"].as_str().unwrap_or("No response"),
+                result["content"]["assistant"]
+                    .as_str()
+                    .unwrap_or("No response"),
                 job_id
             ))
         }
 
         "get_job_result" => {
-            let job_id = arguments["job_id"].as_str()
-                .ok_or("Missing job_id")?;
+            let job_id = arguments["job_id"].as_str().ok_or("Missing job_id")?;
             let job = client.get_job_status(job_id).await?;
             let status = job["status"].as_str().unwrap_or("unknown");
-            
+
             match status {
                 "completed" => {
                     let result = &job["result"];
                     Ok(format!(
                         "✅ **Job Completed**\n\n\
                          **Agent Response:**\n{}",
-                        result["content"]["assistant"].as_str().unwrap_or("No response")
+                        result["content"]["assistant"]
+                            .as_str()
+                            .unwrap_or("No response")
                     ))
                 }
-                "failed" => {
-                    Ok(format!(
-                        "❌ **Job Failed**\n\n\
+                "failed" => Ok(format!(
+                    "❌ **Job Failed**\n\n\
                          Error: {}",
-                        job["error"].as_str().unwrap_or("Unknown error")
-                    ))
-                }
-                "pending" | "processing" => {
-                    Ok(format!(
-                        "⏳ **Job In Progress**\n\n\
+                    job["error"].as_str().unwrap_or("Unknown error")
+                )),
+                "pending" | "processing" => Ok(format!(
+                    "⏳ **Job In Progress**\n\n\
                          Status: {}\n\
                          Check again in a few moments.",
-                        status
-                    ))
-                }
-                _ => {
-                    Ok(format!("❓ Job status: {}", status))
-                }
+                    status
+                )),
+                _ => Ok(format!("❓ Job status: {}", status)),
             }
+        }
+
+        "get_chat_history" => {
+            let chat_id = arguments["chat_id"].as_str().ok_or("Missing chat_id")?;
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
+
+            let chat_data = client.get_chat_messages(chat_id, limit).await?;
+            let metadata = &chat_data["metadata"];
+            let messages = chat_data["messages"]
+                .as_array()
+                .ok_or("Invalid response: missing messages")?;
+
+            if messages.is_empty() {
+                return Ok(format!(
+                    "📜 **Chat History: {}**\n\n\
+                     No messages yet in this chat.\n\n\
+                     💡 Use 'send_remote_task' or 'continue_conversation' to start the conversation.",
+                    metadata["name"].as_str().unwrap_or("Untitled")
+                ));
+            }
+
+            let mut output = format!(
+                "📜 **Chat History: {}**\n\
+                 Device: {} | Messages: {} | Format: {}\n\n",
+                metadata["name"].as_str().unwrap_or("Untitled"),
+                metadata
+                    .get("device_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown"),
+                chat_data["message_count"].as_u64().unwrap_or(0),
+                metadata
+                    .get("format")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+            );
+
+            output.push_str("---\n");
+
+            for msg in messages {
+                let role = msg["type_label"].as_str().unwrap_or("unknown");
+                let text = msg["text"].as_str().unwrap_or("");
+                let created_at = msg.get("created_at").and_then(|v| v.as_str()).or_else(|| {
+                    msg.get("created_at")
+                        .and_then(|v| v.as_i64())
+                        .map(|_| "timestamp")
+                });
+
+                output.push_str(&format!(
+                    "[{}] {}\n{}\n\n",
+                    role.chars()
+                        .next()
+                        .unwrap()
+                        .to_uppercase()
+                        .collect::<String>()
+                        + &role[1..],
+                    created_at.unwrap_or(""),
+                    text
+                ));
+            }
+
+            output.push_str(
+                "---\n\n💡 Use 'continue_conversation' to add to this chat with full context.",
+            );
+            Ok(output)
+        }
+
+        "continue_conversation" => {
+            let chat_id = arguments["chat_id"].as_str().ok_or("Missing chat_id")?;
+            let message = arguments["message"].as_str().ok_or("Missing message")?;
+            let wait = arguments
+                .get("wait")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let timeout = arguments
+                .get("timeout")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(300) as u64;
+
+            let prompt_data = json!({
+                "prompt": message,
+                "model": arguments.get("model")
+            });
+
+            let job_result = client.send_prompt_async(chat_id, prompt_data).await?;
+            let job_id = job_result["job_id"]
+                .as_str()
+                .ok_or("Missing job_id in response")?;
+
+            if !wait {
+                return Ok(format!(
+                    "🚀 **Message Sent**\n\n\
+                     Job ID: {}\n\n\
+                     💡 Use `get_job_result` to check status.",
+                    job_id
+                ));
+            }
+
+            // Wait for completion
+            let job = client.wait_for_job(job_id, timeout).await?;
+            let result = &job["result"];
+
+            Ok(format!(
+                "✅ **Response Received**\n\n\
+                 **Agent:**\n{}\n\n\
+                 Job ID: {}\n\n\
+                 💡 Use 'get_chat_history' to see full conversation.",
+                result["content"]["assistant"]
+                    .as_str()
+                    .unwrap_or("No response"),
+                job_id
+            ))
+        }
+
+        "list_remote_chats" => {
+            let chats = client.list_remote_chats().await?;
+
+            if chats.is_empty() {
+                return Ok("💬 **No Active Remote Chats**\n\n\
+                          Use `create_remote_chat` to start a new conversation with a remote agent.".to_string());
+            }
+
+            let mut output = String::from("💬 **Active Remote Chats:**\n\n");
+
+            for (idx, chat) in chats.iter().enumerate() {
+                output.push_str(&format!(
+                    "{}. **{}**\n\
+                     - ID: {}\n\
+                     - Device: {}\n\
+                     - Directory: {}\n\
+                     - Messages: {}\n\
+                     - Last Active: {}\n\n",
+                    idx + 1,
+                    chat["name"].as_str().unwrap_or("Untitled"),
+                    chat["chat_id"].as_str().unwrap_or(""),
+                    chat.get("device_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown"),
+                    chat["working_directory"].as_str().unwrap_or(""),
+                    chat.get("message_count")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0),
+                    chat.get("last_updated_at")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown")
+                ));
+            }
+
+            output.push_str("💡 Use 'get_chat_history' to see messages or 'continue_conversation' to add to a chat.");
+            Ok(output)
         }
 
         _ => Err(format!("Unknown tool: {}", name).into()),
     }
 }
 
+fn send_result_response(result: Value, request_id: &Option<Value>) -> Result<(), Box<dyn Error>> {
+    let mut response = json!({
+        "jsonrpc": "2.0",
+        "result": result,
+    });
+    response["id"] = request_id.clone().unwrap_or(Value::Null);
+    println!("{}", serde_json::to_string(&response)?);
+    Ok(())
+}
+
+fn send_error_response(
+    code: i32,
+    message: String,
+    data: Option<Value>,
+    request_id: &Option<Value>,
+) -> Result<(), Box<dyn Error>> {
+    let mut error_obj = json!({
+        "code": code,
+        "message": message,
+    });
+    if let Some(data_value) = data {
+        error_obj["data"] = data_value;
+    }
+
+    let mut response = json!({
+        "jsonrpc": "2.0",
+        "error": error_obj,
+    });
+    response["id"] = request_id.clone().unwrap_or(Value::Null);
+    println!("{}", serde_json::to_string(&response)?);
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    eprintln!("🚀 Blink MCP Server starting...");
-    
+    // Don't print to stderr - MCP protocol expects clean stderr
+    // eprintln!("🚀 Blink MCP Server starting...");
+
     let client = BlinkApiClient::new();
-    
+
     // Simple stdio-based MCP protocol implementation
     // In production, you would use a proper MCP library
     let stdin = std::io::stdin();
     let mut line = String::new();
-    
+
     loop {
         line.clear();
         if stdin.read_line(&mut line)? == 0 {
             break;
         }
-        
+
         let request: Value = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("Failed to parse request: {}", e);
+                let error_response = json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": {
+                        "code": -32700,
+                        "message": format!("Parse error: {}", e)
+                    }
+                });
+                println!("{}", serde_json::to_string(&error_response).unwrap_or_else(|_| "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Failed to serialize error\"}}".to_string()));
                 continue;
             }
         };
-        
-        let method = request["method"].as_str().unwrap_or("");
-        
+
+        let request_id = request.get("id").cloned();
+        let method = match request.get("method").and_then(|m| m.as_str()) {
+            Some(m) => m,
+            None => {
+                send_error_response(
+                    -32600,
+                    "Invalid request: missing method".to_string(),
+                    None,
+                    &request_id,
+                )?;
+                continue;
+            }
+        };
+
         match method {
             "tools/list" => {
-                let response = json!({
+                let result = json!({
                     "tools": get_tool_definitions()
                 });
-                println!("{}", serde_json::to_string(&response)?);
+                send_result_response(result, &request_id)?;
             }
-            
+
             "tools/call" => {
                 let tool_name = request["params"]["name"].as_str().unwrap_or("");
                 let arguments = request["params"]["arguments"].clone();
-                
+
                 match handle_tool_call(&client, tool_name, arguments).await {
                     Ok(content) => {
-                        let response = json!({
+                        let result = json!({
                             "content": [{
                                 "type": "text",
                                 "text": content
                             }]
                         });
-                        println!("{}", serde_json::to_string(&response)?);
+                        send_result_response(result, &request_id)?;
                     }
                     Err(e) => {
-                        let response = json!({
-                            "content": [{
-                                "type": "text",
-                                "text": format!("Error: {}", e)
-                            }],
-                            "isError": true
-                        });
-                        println!("{}", serde_json::to_string(&response)?);
+                        send_error_response(
+                            -32000,
+                            "Tool invocation failed".to_string(),
+                            Some(json!({
+                                "details": format!("{}", e)
+                            })),
+                            &request_id,
+                        )?;
                     }
                 }
             }
-            
+
             _ => {
-                eprintln!("Unknown method: {}", method);
+                send_error_response(
+                    -32601,
+                    format!("Unknown method: {}", method),
+                    None,
+                    &request_id,
+                )?;
             }
         }
     }
-    
+
     Ok(())
 }

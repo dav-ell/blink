@@ -14,12 +14,12 @@ pub fn parse_cursor_agent_output(output: &str) -> Result<ParsedAgentOutput, Stri
     let mut text_parts = Vec::new();
     let mut thinking: Option<String> = None;
     let mut tool_calls: Option<Vec<HashMap<String, Value>>> = None;
-    
+
     for line in output.lines() {
         if line.trim().is_empty() {
             continue;
         }
-        
+
         match serde_json::from_str::<HashMap<String, Value>>(line) {
             Ok(json_obj) => {
                 if let Some(event_type) = json_obj.get("type").and_then(|v| v.as_str()) {
@@ -30,7 +30,8 @@ pub fn parse_cursor_agent_output(output: &str) -> Result<ParsedAgentOutput, Stri
                             }
                         }
                         "thinking" => {
-                            if let Some(content) = json_obj.get("thinking").and_then(|v| v.as_str()) {
+                            if let Some(content) = json_obj.get("thinking").and_then(|v| v.as_str())
+                            {
                                 thinking = Some(content.to_string());
                             }
                         }
@@ -52,11 +53,10 @@ pub fn parse_cursor_agent_output(output: &str) -> Result<ParsedAgentOutput, Stri
             }
         }
     }
-    
+
     Ok(ParsedAgentOutput {
         text: text_parts.join(""),
         thinking,
         tool_calls,
     })
 }
-

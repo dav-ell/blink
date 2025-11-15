@@ -6,56 +6,50 @@ use uuid::Uuid;
 
 /// Create ItemTable cache entry for a chat
 /// This is required for Cursor IDE to recognize the chat and not delete it on close
-fn create_item_table_cache_entry(
-    conn: &Connection,
-    chat_id: &str,
-) -> Result<()> {
+fn create_item_table_cache_entry(conn: &Connection, chat_id: &str) -> Result<()> {
     let key = format!("workbench.panel.composerChatViewPane.{}.hidden", chat_id);
-    
+
     // Generate a view ID (can be the same as chat_id or a new UUID)
     let view_id = Uuid::new_v4().to_string();
-    
+
     // Create the cache entry value
     let cache_value = json!([{
         "id": format!("workbench.panel.aichat.view.{}", view_id),
         "isHidden": false
     }]);
-    
+
     let value_str = cache_value.to_string();
-    
+
     // Insert into ItemTable
     conn.execute(
         "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)",
         [&key, &value_str],
     )?;
-    
+
     Ok(())
 }
 
 /// Create ItemTable cache entry within a transaction
-fn create_item_table_cache_entry_tx(
-    tx: &Transaction,
-    chat_id: &str,
-) -> Result<()> {
+fn create_item_table_cache_entry_tx(tx: &Transaction, chat_id: &str) -> Result<()> {
     let key = format!("workbench.panel.composerChatViewPane.{}.hidden", chat_id);
-    
+
     // Generate a view ID (can be the same as chat_id or a new UUID)
     let view_id = Uuid::new_v4().to_string();
-    
+
     // Create the cache entry value
     let cache_value = json!([{
         "id": format!("workbench.panel.aichat.view.{}", view_id),
         "isHidden": false
     }]);
-    
+
     let value_str = cache_value.to_string();
-    
+
     // Insert into ItemTable
     tx.execute(
         "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)",
         [&key, &value_str],
     )?;
-    
+
     Ok(())
 }
 
@@ -66,12 +60,12 @@ pub fn ensure_chat_exists(
 ) -> Result<(bool, HashMap<String, Value>)> {
     let key = format!("composerData:{}", chat_id);
     let mut stmt = conn.prepare("SELECT value FROM cursorDiskKV WHERE key = ?")?;
-    
+
     let existing = stmt.query_row([&key], |row| {
         let value_str: String = row.get(0)?;
         Ok(value_str)
     });
-    
+
     match existing {
         Ok(value_str) => {
             let metadata: HashMap<String, Value> = serde_json::from_str(&value_str)?;
@@ -80,7 +74,7 @@ pub fn ensure_chat_exists(
         Err(rusqlite::Error::QueryReturnedNoRows) => {
             // Create minimal metadata
             let now_ms = chrono::Utc::now().timestamp_millis();
-            
+
             // Create rich text structure
             let rich_text = json!({
                 "root": {
@@ -97,7 +91,7 @@ pub fn ensure_chat_exists(
                     "version": 1
                 }
             });
-            
+
             let mut metadata = HashMap::new();
             metadata.insert("_v".to_string(), Value::Number(10.into()));
             metadata.insert("composerId".to_string(), Value::String(chat_id.to_string()));
@@ -105,24 +99,27 @@ pub fn ensure_chat_exists(
             metadata.insert("richText".to_string(), Value::String(rich_text.to_string()));
             metadata.insert("hasLoaded".to_string(), Value::Bool(true));
             metadata.insert("text".to_string(), Value::String(String::new()));
-            metadata.insert("fullConversationHeadersOnly".to_string(), Value::Array(vec![]));
+            metadata.insert(
+                "fullConversationHeadersOnly".to_string(),
+                Value::Array(vec![]),
+            );
             metadata.insert("createdAt".to_string(), Value::Number(now_ms.into()));
             metadata.insert("lastUpdatedAt".to_string(), Value::Number(now_ms.into()));
             metadata.insert("isArchived".to_string(), Value::Bool(false));
             metadata.insert("isDraft".to_string(), Value::Bool(false));
             metadata.insert("totalLinesAdded".to_string(), Value::Number(0.into()));
             metadata.insert("totalLinesRemoved".to_string(), Value::Number(0.into()));
-            
+
             // Save to database
             let metadata_str = serde_json::to_string(&metadata)?;
             conn.execute(
                 "INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)",
                 [&key, &metadata_str],
             )?;
-            
+
             // Create ItemTable cache entry to prevent deletion on Cursor IDE close
             create_item_table_cache_entry(conn, chat_id)?;
-            
+
             Ok((true, metadata))
         }
         Err(e) => Err(e.into()),
@@ -136,12 +133,12 @@ pub fn ensure_chat_exists_tx(
 ) -> Result<(bool, HashMap<String, Value>)> {
     let key = format!("composerData:{}", chat_id);
     let mut stmt = tx.prepare("SELECT value FROM cursorDiskKV WHERE key = ?")?;
-    
+
     let existing = stmt.query_row([&key], |row| {
         let value_str: String = row.get(0)?;
         Ok(value_str)
     });
-    
+
     match existing {
         Ok(value_str) => {
             let metadata: HashMap<String, Value> = serde_json::from_str(&value_str)?;
@@ -150,7 +147,7 @@ pub fn ensure_chat_exists_tx(
         Err(rusqlite::Error::QueryReturnedNoRows) => {
             // Create minimal metadata (same as above)
             let now_ms = chrono::Utc::now().timestamp_millis();
-            
+
             let rich_text = json!({
                 "root": {
                     "children": [{
@@ -166,7 +163,7 @@ pub fn ensure_chat_exists_tx(
                     "version": 1
                 }
             });
-            
+
             let mut metadata = HashMap::new();
             metadata.insert("_v".to_string(), Value::Number(10.into()));
             metadata.insert("composerId".to_string(), Value::String(chat_id.to_string()));
@@ -174,23 +171,26 @@ pub fn ensure_chat_exists_tx(
             metadata.insert("richText".to_string(), Value::String(rich_text.to_string()));
             metadata.insert("hasLoaded".to_string(), Value::Bool(true));
             metadata.insert("text".to_string(), Value::String(String::new()));
-            metadata.insert("fullConversationHeadersOnly".to_string(), Value::Array(vec![]));
+            metadata.insert(
+                "fullConversationHeadersOnly".to_string(),
+                Value::Array(vec![]),
+            );
             metadata.insert("createdAt".to_string(), Value::Number(now_ms.into()));
             metadata.insert("lastUpdatedAt".to_string(), Value::Number(now_ms.into()));
             metadata.insert("isArchived".to_string(), Value::Bool(false));
             metadata.insert("isDraft".to_string(), Value::Bool(false));
             metadata.insert("totalLinesAdded".to_string(), Value::Number(0.into()));
             metadata.insert("totalLinesRemoved".to_string(), Value::Number(0.into()));
-            
+
             let metadata_str = serde_json::to_string(&metadata)?;
             tx.execute(
                 "INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)",
                 [&key, &metadata_str],
             )?;
-            
+
             // Create ItemTable cache entry to prevent deletion on Cursor IDE close
             create_item_table_cache_entry_tx(tx, chat_id)?;
-            
+
             Ok((true, metadata))
         }
         Err(e) => Err(e.into()),
@@ -206,12 +206,12 @@ pub fn save_message_to_db(
 ) -> Result<()> {
     let key = format!("bubbleId:{}:{}", chat_id, bubble_id);
     let value_str = serde_json::to_string(bubble_data)?;
-    
+
     conn.execute(
         "INSERT OR REPLACE INTO cursorDiskKV (key, value) VALUES (?, ?)",
         [&key, &value_str],
     )?;
-    
+
     Ok(())
 }
 
@@ -224,12 +224,12 @@ pub fn save_message_to_db_tx(
 ) -> Result<()> {
     let key = format!("bubbleId:{}:{}", chat_id, bubble_id);
     let value_str = serde_json::to_string(bubble_data)?;
-    
+
     tx.execute(
         "INSERT OR REPLACE INTO cursorDiskKV (key, value) VALUES (?, ?)",
         [&key, &value_str],
     )?;
-    
+
     Ok(())
 }
 
@@ -240,26 +240,26 @@ pub fn update_chat_metadata(
     updates: HashMap<String, Value>,
 ) -> Result<()> {
     let key = format!("composerData:{}", chat_id);
-    
+
     // Get existing metadata
     let mut metadata: HashMap<String, Value> = {
         let mut stmt = conn.prepare("SELECT value FROM cursorDiskKV WHERE key = ?")?;
         let value_str: String = stmt.query_row([&key], |row| row.get(0))?;
         serde_json::from_str(&value_str)?
     };
-    
+
     // Apply updates
     for (k, v) in updates {
         metadata.insert(k, v);
     }
-    
+
     // Save back
     let metadata_str = serde_json::to_string(&metadata)?;
     conn.execute(
         "INSERT OR REPLACE INTO cursorDiskKV (key, value) VALUES (?, ?)",
         [&key, &metadata_str],
     )?;
-    
+
     Ok(())
 }
 
@@ -270,26 +270,26 @@ pub fn update_chat_metadata_tx(
     updates: HashMap<String, Value>,
 ) -> Result<()> {
     let key = format!("composerData:{}", chat_id);
-    
+
     // Get existing metadata
     let mut metadata: HashMap<String, Value> = {
         let mut stmt = tx.prepare("SELECT value FROM cursorDiskKV WHERE key = ?")?;
         let value_str: String = stmt.query_row([&key], |row| row.get(0))?;
         serde_json::from_str(&value_str)?
     };
-    
+
     // Apply updates
     for (k, v) in updates {
         metadata.insert(k, v);
     }
-    
+
     // Save back
     let metadata_str = serde_json::to_string(&metadata)?;
     tx.execute(
         "INSERT OR REPLACE INTO cursorDiskKV (key, value) VALUES (?, ?)",
         [&key, &metadata_str],
     )?;
-    
+
     Ok(())
 }
 
@@ -304,23 +304,22 @@ pub fn persist_conversation_turn(
     assistant_bubble: &HashMap<String, Value>,
 ) -> Result<()> {
     let tx = conn.transaction()?;
-    
+
     // Ensure chat exists (this also creates ItemTable cache entry if needed)
     ensure_chat_exists_tx(&tx, chat_id)?;
-    
+
     // Save user message
     save_message_to_db_tx(&tx, chat_id, user_bubble_id, user_bubble)?;
-    
+
     // Save assistant message
     save_message_to_db_tx(&tx, chat_id, assistant_bubble_id, assistant_bubble)?;
-    
+
     // Update chat metadata (last updated time)
     let now_ms = chrono::Utc::now().timestamp_millis();
     let mut updates = HashMap::new();
     updates.insert("lastUpdatedAt".to_string(), Value::Number(now_ms.into()));
     update_chat_metadata_tx(&tx, chat_id, updates)?;
-    
+
     tx.commit()?;
     Ok(())
 }
-

@@ -23,24 +23,28 @@ async fn main() -> anyhow::Result<()> {
 
     // Load configuration
     let settings = Settings::new()?;
-    
+
     tracing::info!("{}", "=".repeat(80));
     tracing::info!("Cursor Chat REST API Server Starting (Rust Edition)");
     tracing::info!("{}", "=".repeat(80));
     tracing::info!("Database: {}", settings.db_path.display());
     tracing::info!("Cursor Agent: {}", settings.cursor_agent_path.display());
-    tracing::info!("API Endpoint: http://{}:{}", settings.api_host, settings.api_port);
+    tracing::info!(
+        "API Endpoint: http://{}:{}",
+        settings.api_host,
+        settings.api_port
+    );
     tracing::info!("{}", "=".repeat(80));
-    
+
     // Initialize internal databases (jobs + devices)
     let internal_db_url = format!("sqlite://{}", settings.device_db_path.display());
     let internal_pool = db::internal_pool::create_internal_pool(&internal_db_url).await?;
-    
+
     // Initialize database schemas
     services::init_jobs_db(&internal_pool).await?;
     db::device_db::ensure_device_db_initialized(&internal_pool).await?;
     tracing::info!("Internal databases initialized");
-    
+
     // Auto-discover remote agents from configuration
     // Look for remote_hosts.yaml in project root (parent of rest-rust directory)
     let config_path = std::env::current_dir()
@@ -48,11 +52,11 @@ async fn main() -> anyhow::Result<()> {
         .parent()
         .map(|p| p.join("remote_hosts.yaml"))
         .unwrap_or_else(|| std::path::PathBuf::from("remote_hosts.yaml"));
-    
+
     if config_path.exists() {
         tracing::info!("Discovering remote agents from {}", config_path.display());
         let discovery_results = services::discover_remote_hosts(&internal_pool, &config_path).await;
-        
+
         // Log individual results
         for result in &discovery_results {
             match result.status {
@@ -71,23 +75,26 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     } else {
-        tracing::info!("No remote hosts configuration found at {}", config_path.display());
+        tracing::info!(
+            "No remote hosts configuration found at {}",
+            config_path.display()
+        );
         tracing::info!("Skipping auto-discovery. Add remote_hosts.yaml to enable.");
     }
-    
+
     // Create circuit breaker with configuration
     let circuit_breaker_config = blink_api::middleware::circuit_breaker::CircuitBreakerConfig {
         failure_threshold: 5,
         success_threshold: 2,
         timeout: Duration::from_secs(60),
     };
-    
+
     // Create HTTP client for remote device communication
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .expect("Failed to create HTTP client");
-    
+
     // Create shared state
     let state = Arc::new(AppState {
         settings: settings.clone(),
@@ -96,13 +103,13 @@ async fn main() -> anyhow::Result<()> {
         circuit_breaker: blink_api::middleware::DeviceCircuitBreaker::new(circuit_breaker_config),
         http_client,
     });
-    
+
     // Configure CORS
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    
+
     // Build router with middleware
     let app = Router::new()
         // Health endpoints
@@ -110,21 +117,38 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(api::health::health_check))
         // Metrics endpoints
         .route("/metrics", get(api::metrics::get_metrics))
-        .route("/metrics/prometheus", get(api::metrics::get_metrics_prometheus))
+        .route(
+            "/metrics/prometheus",
+            get(api::metrics::get_metrics_prometheus),
+        )
         .route("/metrics/reset", post(api::metrics::reset_metrics))
         // Chat endpoints
         .route("/chats", get(api::chats::list_chats))
+        .route("/chats/cursor-agent", get(api::chats::list_cursor_agent_chats))
         .route("/chats/:chat_id", get(api::chats::get_chat_messages))
-        .route("/chats/:chat_id/metadata", get(api::chats::get_chat_metadata))
-        .route("/chats/:chat_id/sync-cache", post(api::chats::sync_chat_cache))
+        .route(
+            "/chats/:chat_id/metadata",
+            get(api::chats::get_chat_metadata),
+        )
+        .route(
+            "/chats/:chat_id/sync-cache",
+            post(api::chats::sync_chat_cache),
+        )
+        .route("/remote-chats", get(api::chats::list_remote_chats))
         // Cache management endpoints
         .route("/cache/status", get(api::chats::get_cache_status))
         .route("/cache/verify", post(api::chats::verify_and_fix_cache))
         // Agent endpoints
         .route("/agent/models", get(api::agent::get_models))
         .route("/agent/create-chat", post(api::agent::create_chat))
-        .route("/chats/:chat_id/agent-prompt", post(api::agent::send_agent_prompt))
-        .route("/chats/:chat_id/agent-prompt-async", post(api::jobs::create_agent_prompt_job))
+        .route(
+            "/chats/:chat_id/agent-prompt",
+            post(api::agent::send_agent_prompt),
+        )
+        .route(
+            "/chats/:chat_id/agent-prompt-async",
+            post(api::jobs::create_agent_prompt_job),
+        )
         // Job endpoints
         .route("/jobs/:job_id", get(api::jobs::get_job_details))
         .route("/jobs/:job_id/status", get(api::jobs::get_job_status))
@@ -135,11 +159,26 @@ async fn main() -> anyhow::Result<()> {
         .route("/devices/:device_id", get(api::devices::get_device))
         .route("/devices/:device_id", put(api::devices::update_device))
         .route("/devices/:device_id", delete(api::devices::delete_device))
-        .route("/devices/:device_id/test", post(api::devices::test_device_connection))
-        .route("/devices/:device_id/verify-agent", post(api::devices::verify_agent_installed))
-        .route("/devices/:device_id/create-chat", post(api::devices::create_device_chat))
-        .route("/devices/chats/remote", get(api::devices::list_remote_chats))
-        .route("/devices/chats/:chat_id/send-prompt", post(api::devices::send_remote_prompt))
+        .route(
+            "/devices/:device_id/test",
+            post(api::devices::test_device_connection),
+        )
+        .route(
+            "/devices/:device_id/verify-agent",
+            post(api::devices::verify_agent_installed),
+        )
+        .route(
+            "/devices/:device_id/create-chat",
+            post(api::devices::create_device_chat),
+        )
+        .route(
+            "/devices/chats/remote",
+            get(api::devices::list_remote_chats),
+        )
+        .route(
+            "/devices/chats/:chat_id/send-prompt",
+            post(api::devices::send_remote_prompt),
+        )
         // Add middleware (order matters: last added runs first)
         .layer(middleware::from_fn(
             blink_api::middleware::request_tracing_middleware,
@@ -147,15 +186,14 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
-    
+
     // Start server
     let addr = format!("{}:{}", settings.api_host, settings.api_port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    
+
     tracing::info!("Server listening on {}", addr);
-    
+
     axum::serve(listener, app).await?;
-    
+
     Ok(())
 }
-

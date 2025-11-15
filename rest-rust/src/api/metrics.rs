@@ -8,7 +8,7 @@ use crate::{AppState, Result};
 pub async fn get_metrics(State(state): State<Arc<AppState>>) -> Result<Json<Value>> {
     let snapshot = state.metrics.snapshot();
     let circuit_breaker_stats = state.circuit_breaker.get_statistics();
-    
+
     Ok(Json(json!({
         "timestamp": snapshot.timestamp,
         "uptime_seconds": snapshot.uptime_seconds,
@@ -23,19 +23,25 @@ pub async fn get_metrics(State(state): State<Arc<AppState>>) -> Result<Json<Valu
 pub async fn get_metrics_prometheus(State(state): State<Arc<AppState>>) -> Result<String> {
     let snapshot = state.metrics.snapshot();
     let circuit_breaker_stats = state.circuit_breaker.get_statistics();
-    
+
     let mut output = String::new();
-    
+
     // Add timestamp as comment
-    output.push_str(&format!("# Metrics snapshot at timestamp {}\n", snapshot.timestamp));
-    output.push_str(&format!("# Uptime: {} seconds\n\n", snapshot.uptime_seconds));
-    
+    output.push_str(&format!(
+        "# Metrics snapshot at timestamp {}\n",
+        snapshot.timestamp
+    ));
+    output.push_str(&format!(
+        "# Uptime: {} seconds\n\n",
+        snapshot.uptime_seconds
+    ));
+
     // Export counters
     for (name, value) in &snapshot.counters {
         output.push_str(&format!("# TYPE {} counter\n", name));
         output.push_str(&format!("{} {}\n\n", name, value));
     }
-    
+
     // Export histograms as summaries
     for (name, stats) in &snapshot.histograms {
         output.push_str(&format!("# TYPE {} summary\n", name));
@@ -45,13 +51,13 @@ pub async fn get_metrics_prometheus(State(state): State<Arc<AppState>>) -> Resul
         output.push_str(&format!("{}{{quantile=\"0.95\"}} {}\n", name, stats.p95));
         output.push_str(&format!("{}{{quantile=\"0.99\"}} {}\n\n", name, stats.p99));
     }
-    
+
     // Export gauges
     for (name, value) in &snapshot.gauges {
         output.push_str(&format!("# TYPE {} gauge\n", name));
         output.push_str(&format!("{} {}\n\n", name, value));
     }
-    
+
     // Export circuit breaker states
     output.push_str("# TYPE circuit_breaker_state gauge\n");
     for (device_id, stats) in &circuit_breaker_stats {
@@ -66,7 +72,7 @@ pub async fn get_metrics_prometheus(State(state): State<Arc<AppState>>) -> Resul
         ));
     }
     output.push('\n');
-    
+
     output.push_str("# TYPE circuit_breaker_failures counter\n");
     for (device_id, stats) in &circuit_breaker_stats {
         output.push_str(&format!(
@@ -74,17 +80,16 @@ pub async fn get_metrics_prometheus(State(state): State<Arc<AppState>>) -> Resul
             device_id, stats.failure_count
         ));
     }
-    
+
     Ok(output)
 }
 
 /// Reset metrics (useful for testing)
 pub async fn reset_metrics(State(state): State<Arc<AppState>>) -> Result<Json<Value>> {
     state.metrics.reset();
-    
+
     Ok(Json(json!({
         "status": "ok",
         "message": "Metrics reset successfully"
     })))
 }
-

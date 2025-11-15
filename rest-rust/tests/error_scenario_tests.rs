@@ -4,14 +4,14 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use blink_api::models::device::{Device, DeviceStatus, DeviceCreate};
+use blink_api::models::device::{Device, DeviceCreate, DeviceStatus};
+use blink_api::Settings;
 use chrono::Utc;
 use http_body_util::BodyExt;
 use mockito::Server;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use tower::ServiceExt;
-use blink_api::Settings;
 
 /// Test network errors when remote service is unavailable
 #[tokio::test]
@@ -27,7 +27,7 @@ async fn test_remote_service_unavailable() {
         is_active: true,
         status: DeviceStatus::Online,
     };
-    
+
     let settings = Settings {
         db_path: PathBuf::from("./test.db"),
         cursor_agent_path: PathBuf::from("cursor-agent"),
@@ -56,7 +56,7 @@ async fn test_remote_service_unavailable() {
         cors_allow_origins: vec!["*".to_string()],
         cors_allow_credentials: true,
     };
-    
+
     let result = blink_api::services::execute_remote_cursor_agent(
         &settings,
         &device,
@@ -67,7 +67,7 @@ async fn test_remote_service_unavailable() {
         "json",
     )
     .await;
-    
+
     assert!(result.is_err());
 }
 
@@ -75,14 +75,14 @@ async fn test_remote_service_unavailable() {
 #[tokio::test]
 async fn test_remote_service_unauthorized() {
     let mut server = Server::new_async().await;
-    
+
     let mock = server
         .mock("POST", "/execute")
         .with_status(401)
         .with_body(r#"{"error": "Invalid API key"}"#)
         .create_async()
         .await;
-    
+
     let device = Device {
         id: "test-device".to_string(),
         name: "Test Device".to_string(),
@@ -94,7 +94,7 @@ async fn test_remote_service_unauthorized() {
         is_active: true,
         status: DeviceStatus::Online,
     };
-    
+
     let settings = Settings {
         db_path: PathBuf::from("./test.db"),
         cursor_agent_path: PathBuf::from("cursor-agent"),
@@ -123,7 +123,7 @@ async fn test_remote_service_unauthorized() {
         cors_allow_origins: vec!["*".to_string()],
         cors_allow_credentials: true,
     };
-    
+
     let result = blink_api::services::execute_remote_cursor_agent(
         &settings,
         &device,
@@ -134,7 +134,7 @@ async fn test_remote_service_unauthorized() {
         "json",
     )
     .await;
-    
+
     mock.assert_async().await;
     assert!(result.is_err());
 }
@@ -143,14 +143,14 @@ async fn test_remote_service_unauthorized() {
 #[tokio::test]
 async fn test_remote_service_internal_error() {
     let mut server = Server::new_async().await;
-    
+
     let mock = server
         .mock("POST", "/execute")
         .with_status(500)
         .with_body(r#"{"error": "Internal server error"}"#)
         .create_async()
         .await;
-    
+
     let device = Device {
         id: "test-device".to_string(),
         name: "Test Device".to_string(),
@@ -162,7 +162,7 @@ async fn test_remote_service_internal_error() {
         is_active: true,
         status: DeviceStatus::Online,
     };
-    
+
     let settings = Settings {
         db_path: PathBuf::from("./test.db"),
         cursor_agent_path: PathBuf::from("cursor-agent"),
@@ -191,7 +191,7 @@ async fn test_remote_service_internal_error() {
         cors_allow_origins: vec!["*".to_string()],
         cors_allow_credentials: true,
     };
-    
+
     let result = blink_api::services::execute_remote_cursor_agent(
         &settings,
         &device,
@@ -202,7 +202,7 @@ async fn test_remote_service_internal_error() {
         "json",
     )
     .await;
-    
+
     mock.assert_async().await;
     assert!(result.is_err());
 }
@@ -211,7 +211,7 @@ async fn test_remote_service_internal_error() {
 #[tokio::test]
 async fn test_remote_service_malformed_response() {
     let mut server = Server::new_async().await;
-    
+
     let mock = server
         .mock("POST", "/execute")
         .with_status(200)
@@ -219,7 +219,7 @@ async fn test_remote_service_malformed_response() {
         .with_body(r#"{"invalid": "response", "missing": "fields"}"#)
         .create_async()
         .await;
-    
+
     let device = Device {
         id: "test-device".to_string(),
         name: "Test Device".to_string(),
@@ -231,7 +231,7 @@ async fn test_remote_service_malformed_response() {
         is_active: true,
         status: DeviceStatus::Online,
     };
-    
+
     let settings = Settings {
         db_path: PathBuf::from("./test.db"),
         cursor_agent_path: PathBuf::from("cursor-agent"),
@@ -260,7 +260,7 @@ async fn test_remote_service_malformed_response() {
         cors_allow_origins: vec!["*".to_string()],
         cors_allow_credentials: true,
     };
-    
+
     let result = blink_api::services::execute_remote_cursor_agent(
         &settings,
         &device,
@@ -271,7 +271,7 @@ async fn test_remote_service_malformed_response() {
         "json",
     )
     .await;
-    
+
     mock.assert_async().await;
     assert!(result.is_err());
 }
@@ -290,7 +290,7 @@ async fn test_device_missing_api_key() {
         is_active: true,
         status: DeviceStatus::Online,
     };
-    
+
     let settings = Settings {
         db_path: PathBuf::from("./test.db"),
         cursor_agent_path: PathBuf::from("cursor-agent"),
@@ -319,7 +319,7 @@ async fn test_device_missing_api_key() {
         cors_allow_origins: vec!["*".to_string()],
         cors_allow_credentials: true,
     };
-    
+
     let result = blink_api::services::execute_remote_cursor_agent(
         &settings,
         &device,
@@ -330,16 +330,19 @@ async fn test_device_missing_api_key() {
         "json",
     )
     .await;
-    
+
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), blink_api::AppError::Validation(_)));
+    assert!(matches!(
+        result.unwrap_err(),
+        blink_api::AppError::Validation(_)
+    ));
 }
 
 /// Test API endpoint for deleting non-existent device
 #[tokio::test]
 async fn test_delete_nonexistent_device() {
     let app = common::create_test_app().await;
-    
+
     let response = app
         .oneshot(
             Request::builder()
@@ -350,7 +353,7 @@ async fn test_delete_nonexistent_device() {
         )
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
@@ -358,11 +361,11 @@ async fn test_delete_nonexistent_device() {
 #[tokio::test]
 async fn test_update_nonexistent_device() {
     let app = common::create_test_app().await;
-    
+
     let update = json!({
         "name": "New Name"
     });
-    
+
     let response = app
         .oneshot(
             Request::builder()
@@ -374,7 +377,7 @@ async fn test_update_nonexistent_device() {
         )
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
@@ -382,12 +385,12 @@ async fn test_update_nonexistent_device() {
 #[tokio::test]
 async fn test_create_device_empty_name() {
     let app = common::create_test_app().await;
-    
+
     let device_create = json!({
         "name": "",
         "api_endpoint": "http://localhost:9876"
     });
-    
+
     let response = app
         .oneshot(
             Request::builder()
@@ -399,7 +402,7 @@ async fn test_create_device_empty_name() {
         )
         .await
         .unwrap();
-    
+
     // Should either reject empty name or accept it based on validation rules
     // For now, just check that we get some response
     assert!(response.status().is_success() || response.status().is_client_error());
@@ -409,14 +412,14 @@ async fn test_create_device_empty_name() {
 #[tokio::test]
 async fn test_create_device_short_api_key() {
     let app = common::create_test_app().await;
-    
+
     let device_create = DeviceCreate {
         name: "Test Device".to_string(),
         api_endpoint: "http://localhost:9876".to_string(),
         api_key: Some("short".to_string()), // Too short
         cursor_agent_path: None,
     };
-    
+
     let response = app
         .oneshot(
             Request::builder()
@@ -428,7 +431,7 @@ async fn test_create_device_short_api_key() {
         )
         .await
         .unwrap();
-    
+
     // May or may not validate API key length - depends on implementation
     let status = response.status();
     assert!(status.is_success() || status == StatusCode::BAD_REQUEST);
@@ -438,7 +441,7 @@ async fn test_create_device_short_api_key() {
 #[tokio::test]
 async fn test_execute_with_empty_prompt() {
     let mut server = Server::new_async().await;
-    
+
     // Server should handle empty prompts gracefully
     let mock = server
         .mock("POST", "/execute")
@@ -446,7 +449,7 @@ async fn test_execute_with_empty_prompt() {
         .with_body(r#"{"error": "Prompt cannot be empty"}"#)
         .create_async()
         .await;
-    
+
     let device = Device {
         id: "test-device".to_string(),
         name: "Test Device".to_string(),
@@ -458,7 +461,7 @@ async fn test_execute_with_empty_prompt() {
         is_active: true,
         status: DeviceStatus::Online,
     };
-    
+
     let settings = Settings {
         db_path: PathBuf::from("./test.db"),
         cursor_agent_path: PathBuf::from("cursor-agent"),
@@ -487,7 +490,7 @@ async fn test_execute_with_empty_prompt() {
         cors_allow_origins: vec!["*".to_string()],
         cors_allow_credentials: true,
     };
-    
+
     let result = blink_api::services::execute_remote_cursor_agent(
         &settings,
         &device,
@@ -498,8 +501,7 @@ async fn test_execute_with_empty_prompt() {
         "json",
     )
     .await;
-    
+
     // Should handle empty prompt - either error or send it through
     assert!(result.is_err() || result.is_ok());
 }
-

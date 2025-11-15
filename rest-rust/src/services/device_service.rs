@@ -19,7 +19,7 @@ pub async fn get_device(pool: &SqlitePool, device_id: &str) -> Result<Option<Dev
 pub async fn create_device(pool: &SqlitePool, device_create: DeviceCreate) -> Result<Device> {
     let device_id = Uuid::new_v4().to_string();
     let now = Utc::now();
-    
+
     sqlx::query(
         r#"
         INSERT INTO devices (id, name, api_endpoint, api_key, cursor_agent_path, 
@@ -35,7 +35,7 @@ pub async fn create_device(pool: &SqlitePool, device_create: DeviceCreate) -> Re
     .bind(now.to_rfc3339())
     .execute(pool)
     .await?;
-    
+
     Ok(Device {
         id: device_id,
         name: device_create.name,
@@ -52,13 +52,13 @@ pub async fn create_device(pool: &SqlitePool, device_create: DeviceCreate) -> Re
 /// Update device last_seen timestamp
 pub async fn update_device_last_seen(pool: &SqlitePool, device_id: &str) -> Result<()> {
     let now = Utc::now();
-    
+
     sqlx::query("UPDATE devices SET last_seen = ?, status = 'online' WHERE id = ?")
         .bind(now.to_rfc3339())
         .bind(device_id)
         .execute(pool)
         .await?;
-    
+
     Ok(())
 }
 
@@ -73,13 +73,13 @@ pub async fn update_device_status(
         DeviceStatus::Offline => "offline",
         DeviceStatus::Unknown => "unknown",
     };
-    
+
     sqlx::query("UPDATE devices SET status = ? WHERE id = ?")
         .bind(status_str)
         .bind(device_id)
         .execute(pool)
         .await?;
-    
+
     Ok(())
 }
 
@@ -89,19 +89,16 @@ pub async fn delete_device(pool: &SqlitePool, device_id: &str) -> Result<()> {
         .bind(device_id)
         .execute(pool)
         .await?;
-    
+
     Ok(())
 }
 
 /// Create a remote chat
-pub async fn create_remote_chat(
-    pool: &SqlitePool,
-    create: RemoteChatCreate,
-) -> Result<RemoteChat> {
+pub async fn create_remote_chat(pool: &SqlitePool, create: RemoteChatCreate) -> Result<RemoteChat> {
     let chat_id = Uuid::new_v4().to_string();
     let now = Utc::now();
     let name = create.name.unwrap_or_else(|| "Untitled".to_string());
-    
+
     sqlx::query(
         r#"
         INSERT INTO remote_chats (chat_id, device_id, working_directory, name, 
@@ -116,7 +113,7 @@ pub async fn create_remote_chat(
     .bind(now.to_rfc3339())
     .execute(pool)
     .await?;
-    
+
     Ok(RemoteChat {
         chat_id,
         device_id: create.device_id,
@@ -141,7 +138,7 @@ pub async fn update_remote_chat_metadata(
     preview: Option<&str>,
 ) -> Result<()> {
     let now = Utc::now();
-    
+
     sqlx::query(
         r#"
         UPDATE remote_chats 
@@ -156,7 +153,6 @@ pub async fn update_remote_chat_metadata(
     .bind(chat_id)
     .execute(pool)
     .await?;
-    
+
     Ok(())
 }
-

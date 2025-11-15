@@ -7,13 +7,13 @@ use uuid::Uuid;
 pub struct RequestContext {
     /// Correlation ID for tracing requests across services
     pub correlation_id: String,
-    
+
     /// Timestamp when request started (Unix timestamp in milliseconds)
     pub start_time: u128,
-    
+
     /// Optional user/device identifier
     pub user_id: Option<String>,
-    
+
     /// Optional operation name
     pub operation: Option<String>,
 }
@@ -31,7 +31,7 @@ impl RequestContext {
             operation: None,
         }
     }
-    
+
     /// Create a request context with an existing correlation ID
     pub fn with_correlation_id(correlation_id: String) -> Self {
         Self {
@@ -44,7 +44,7 @@ impl RequestContext {
             operation: None,
         }
     }
-    
+
     /// Get elapsed time in milliseconds
     pub fn elapsed_ms(&self) -> u128 {
         std::time::SystemTime::now()
@@ -53,13 +53,13 @@ impl RequestContext {
             .as_millis()
             - self.start_time
     }
-    
+
     /// Set operation name
     pub fn with_operation(mut self, operation: String) -> Self {
         self.operation = Some(operation);
         self
     }
-    
+
     /// Set user ID
     pub fn with_user_id(mut self, user_id: String) -> Self {
         self.user_id = Some(user_id);
@@ -135,7 +135,7 @@ macro_rules! debug_ctx {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_request_context_creation() {
         let ctx = RequestContext::new();
@@ -144,14 +144,14 @@ mod tests {
         assert!(ctx.user_id.is_none());
         assert!(ctx.operation.is_none());
     }
-    
+
     #[test]
     fn test_request_context_with_correlation_id() {
         let test_id = "test-correlation-id".to_string();
         let ctx = RequestContext::with_correlation_id(test_id.clone());
         assert_eq!(ctx.correlation_id, test_id);
     }
-    
+
     #[test]
     fn test_request_context_elapsed_time() {
         let ctx = RequestContext::new();
@@ -159,15 +159,14 @@ mod tests {
         let elapsed = ctx.elapsed_ms();
         assert!(elapsed >= 10);
     }
-    
+
     #[test]
     fn test_request_context_builder() {
         let ctx = RequestContext::new()
             .with_operation("test_operation".to_string())
             .with_user_id("user123".to_string());
-        
+
         assert_eq!(ctx.operation, Some("test_operation".to_string()));
         assert_eq!(ctx.user_id, Some("user123".to_string()));
     }
 }
-

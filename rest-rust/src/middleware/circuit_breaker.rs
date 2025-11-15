@@ -33,11 +33,11 @@ impl CircuitBreaker {
             last_state_change: Instant::now(),
         }
     }
-    
+
     /// Record a successful request
     fn record_success(&mut self, config: &CircuitBreakerConfig) {
         self.success_count += 1;
-        
+
         match self.state {
             CircuitBreakerState::HalfOpen => {
                 // If enough successes in half-open state, close the circuit
@@ -62,12 +62,12 @@ impl CircuitBreaker {
             }
         }
     }
-    
+
     /// Record a failed request
     fn record_failure(&mut self, config: &CircuitBreakerConfig) {
         self.failure_count += 1;
         self.last_failure_time = Some(Instant::now());
-        
+
         match self.state {
             CircuitBreakerState::Closed => {
                 // Open circuit if failure threshold exceeded
@@ -93,13 +93,16 @@ impl CircuitBreaker {
             }
         }
     }
-    
+
     /// Check if the circuit breaker should transition to half-open
     fn maybe_transition_to_half_open(&mut self, config: &CircuitBreakerConfig) {
         if self.state == CircuitBreakerState::Open {
             let elapsed = self.last_state_change.elapsed();
             if elapsed >= config.timeout {
-                tracing::info!("Circuit breaker transitioning to half-open after {:?}", elapsed);
+                tracing::info!(
+                    "Circuit breaker transitioning to half-open after {:?}",
+                    elapsed
+                );
                 self.state = CircuitBreakerState::HalfOpen;
                 self.failure_count = 0;
                 self.success_count = 0;
@@ -107,7 +110,7 @@ impl CircuitBreaker {
             }
         }
     }
-    
+
     /// Check if a request should be allowed
     fn should_allow_request(&self) -> bool {
         match self.state {
@@ -123,10 +126,10 @@ impl CircuitBreaker {
 pub struct CircuitBreakerConfig {
     /// Number of failures before opening the circuit
     pub failure_threshold: u32,
-    
+
     /// Number of successes required to close the circuit from half-open
     pub success_threshold: u32,
-    
+
     /// Time to wait before transitioning from open to half-open
     pub timeout: Duration,
 }
@@ -156,45 +159,45 @@ impl DeviceCircuitBreaker {
             config,
         }
     }
-    
+
     /// Create with default configuration
     pub fn default() -> Self {
         Self::new(CircuitBreakerConfig::default())
     }
-    
+
     /// Check if a request to a device should be allowed
     pub fn should_allow_request(&self, device_id: &str) -> bool {
         let mut breakers = self.breakers.write().unwrap();
         let breaker = breakers
             .entry(device_id.to_string())
             .or_insert_with(CircuitBreaker::new);
-        
+
         // Check if should transition to half-open
         breaker.maybe_transition_to_half_open(&self.config);
-        
+
         breaker.should_allow_request()
     }
-    
+
     /// Record a successful request to a device
     pub fn record_success(&self, device_id: &str) {
         let mut breakers = self.breakers.write().unwrap();
         let breaker = breakers
             .entry(device_id.to_string())
             .or_insert_with(CircuitBreaker::new);
-        
+
         breaker.record_success(&self.config);
     }
-    
+
     /// Record a failed request to a device
     pub fn record_failure(&self, device_id: &str) {
         let mut breakers = self.breakers.write().unwrap();
         let breaker = breakers
             .entry(device_id.to_string())
             .or_insert_with(CircuitBreaker::new);
-        
+
         breaker.record_failure(&self.config);
     }
-    
+
     /// Get the current state of a device's circuit breaker
     pub fn get_state(&self, device_id: &str) -> CircuitBreakerState {
         let breakers = self.breakers.read().unwrap();
@@ -203,13 +206,13 @@ impl DeviceCircuitBreaker {
             .map(|b| b.state)
             .unwrap_or(CircuitBreakerState::Closed)
     }
-    
+
     /// Reset a device's circuit breaker
     pub fn reset(&self, device_id: &str) {
         let mut breakers = self.breakers.write().unwrap();
         breakers.remove(device_id);
     }
-    
+
     /// Get statistics for all circuit breakers
     pub fn get_statistics(&self) -> HashMap<String, CircuitBreakerStats> {
         let breakers = self.breakers.read().unwrap();
@@ -257,7 +260,7 @@ impl serde::Serialize for CircuitBreakerState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_circuit_breaker_transitions() {
         let config = CircuitBreakerConfig {
@@ -265,25 +268,25 @@ mod tests {
             success_threshold: 2,
             timeout: Duration::from_millis(100),
         };
-        
+
         let cb = DeviceCircuitBreaker::new(config);
         let device_id = "test-device";
-        
+
         // Initially closed
         assert_eq!(cb.get_state(device_id), CircuitBreakerState::Closed);
         assert!(cb.should_allow_request(device_id));
-        
+
         // Record failures
         cb.record_failure(device_id);
         cb.record_failure(device_id);
         assert_eq!(cb.get_state(device_id), CircuitBreakerState::Closed);
-        
+
         cb.record_failure(device_id);
         // Should open after 3 failures
         assert_eq!(cb.get_state(device_id), CircuitBreakerState::Open);
         assert!(!cb.should_allow_request(device_id));
     }
-    
+
     #[tokio::test]
     async fn test_circuit_breaker_half_open() {
         let config = CircuitBreakerConfig {
@@ -291,28 +294,27 @@ mod tests {
             success_threshold: 2,
             timeout: Duration::from_millis(50),
         };
-        
+
         let cb = DeviceCircuitBreaker::new(config);
         let device_id = "test-device";
-        
+
         // Open the circuit
         cb.record_failure(device_id);
         cb.record_failure(device_id);
         assert_eq!(cb.get_state(device_id), CircuitBreakerState::Open);
-        
+
         // Wait for timeout
         tokio::time::sleep(Duration::from_millis(60)).await;
-        
+
         // Should transition to half-open
         assert!(cb.should_allow_request(device_id));
         assert_eq!(cb.get_state(device_id), CircuitBreakerState::HalfOpen);
-        
+
         // Record successes
         cb.record_success(device_id);
         cb.record_success(device_id);
-        
+
         // Should close
         assert_eq!(cb.get_state(device_id), CircuitBreakerState::Closed);
     }
 }
-

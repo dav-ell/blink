@@ -32,20 +32,20 @@ pub async fn init_jobs_db(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await?;
-    
+
     // Create indexes for faster lookups
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_chat_id ON jobs(chat_id)")
         .execute(pool)
         .await?;
-    
+
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_correlation_id ON jobs(correlation_id)")
         .execute(pool)
         .await?;
-    
+
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_status ON jobs(status)")
         .execute(pool)
         .await?;
-    
+
     Ok(())
 }
 
@@ -60,7 +60,7 @@ pub async fn create_job(
     let model = model.unwrap_or("sonnet-4.5-thinking");
     let now = Utc::now();
     let correlation_id = crate::utils::request_context::get_correlation_id();
-    
+
     sqlx::query(
         r#"
         INSERT INTO jobs (job_id, chat_id, prompt, status, created_at, model, correlation_id, retry_count)
@@ -77,7 +77,7 @@ pub async fn create_job(
     .bind(0)
     .execute(pool)
     .await?;
-    
+
     Ok(Job {
         job_id,
         chat_id: chat_id.to_string(),
@@ -114,7 +114,7 @@ pub async fn get_job(pool: &SqlitePool, job_id: &str) -> Result<Option<Job>> {
     .bind(job_id)
     .fetch_optional(pool)
     .await?;
-    
+
     match row {
         Some(row) => {
             let status_str: String = row.get("status");
@@ -126,17 +126,17 @@ pub async fn get_job(pool: &SqlitePool, job_id: &str) -> Result<Option<Job>> {
                 "cancelled" => JobStatus::Cancelled,
                 _ => JobStatus::Pending,
             };
-            
+
             let created_at: String = row.get("created_at");
             let started_at: Option<String> = row.get("started_at");
             let completed_at: Option<String> = row.get("completed_at");
-            
+
             let tool_calls_json: Option<String> = row.get("tool_calls");
             let tool_calls = tool_calls_json.and_then(|s| serde_json::from_str(&s).ok());
-            
+
             let retry_count: Option<i64> = row.try_get("retry_count").ok();
             let execution_time_ms: Option<i64> = row.try_get("execution_time_ms").ok();
-            
+
             Ok(Some(Job {
                 job_id: row.get("job_id"),
                 chat_id: row.get("chat_id"),
@@ -173,6 +173,59 @@ pub async fn get_job(pool: &SqlitePool, job_id: &str) -> Result<Option<Job>> {
     }
 }
 
+/// Update job status (helper for common case)
+pub async fn update_job_status(pool: &SqlitePool, job_id: &str, status: &str) -> Result<()> {
+    let status_enum = match status {
+        "pending" => JobStatus::Pending,
+        "processing" => JobStatus::Processing,
+        "completed" => JobStatus::Completed,
+        "failed" => JobStatus::Failed,
+        "cancelled" => JobStatus::Cancelled,
+        _ => JobStatus::Pending,
+    };
+    
+    let mut started_at = None;
+    let mut completed_at = None;
+    
+    if status == "processing" {
+        started_at = Some(Utc::now());
+    } else if status == "completed" || status == "failed" {
+        completed_at = Some(Utc::now());
+    }
+    
+    update_job(pool, job_id, Some(status_enum), None, None, started_at, completed_at).await
+}
+
+/// Update job with result (marks as completed)
+pub async fn update_job_result(
+    pool: &SqlitePool,
+    job_id: &str,
+    result: &serde_json::Value,
+    thinking: Option<&str>,
+    tool_calls: Option<&Vec<serde_json::Value>>,
+) -> Result<()> {
+    let result_str = serde_json::to_string(result)?;
+    let tool_calls_str = tool_calls.map(|tc| serde_json::to_string(tc).ok()).flatten();
+    
+    sqlx::query(
+        r#"
+        UPDATE jobs 
+        SET status = ?, result = ?, thinking_content = ?, tool_calls = ?, completed_at = ?
+        WHERE job_id = ?
+        "#
+    )
+    .bind("completed")
+    .bind(&result_str)
+    .bind(thinking)
+    .bind(tool_calls_str.as_deref())
+    .bind(Utc::now().to_rfc3339())
+    .bind(job_id)
+    .execute(pool)
+    .await?;
+    
+    Ok(())
+}
+
 /// Update job status and fields
 pub async fn update_job(
     pool: &SqlitePool,
@@ -186,55 +239,51 @@ pub async fn update_job(
     let mut query = String::from("UPDATE jobs SET ");
     let mut updates = Vec::new();
     let mut bind_values: Vec<String> = Vec::new();
-    
+
     if let Some(s) = status {
         updates.push("status = ?");
         bind_values.push(s.as_str().to_string());
     }
-    
+
     if let Some(r) = result {
         updates.push("result = ?");
         bind_values.push(r.to_string());
     }
-    
+
     if let Some(e) = error {
         updates.push("error = ?");
         bind_values.push(e.to_string());
     }
-    
+
     if let Some(t) = started_at {
         updates.push("started_at = ?");
         bind_values.push(t.to_rfc3339());
     }
-    
+
     if let Some(t) = completed_at {
         updates.push("completed_at = ?");
         bind_values.push(t.to_rfc3339());
     }
-    
+
     if updates.is_empty() {
         return Ok(());
     }
-    
+
     query.push_str(&updates.join(", "));
     query.push_str(" WHERE job_id = ?");
-    
+
     let mut q = sqlx::query(&query);
     for val in bind_values {
         q = q.bind(val);
     }
     q = q.bind(job_id);
-    
+
     q.execute(pool).await?;
     Ok(())
 }
 
 /// Get all jobs for a chat
-pub async fn get_chat_jobs(
-    pool: &SqlitePool,
-    chat_id: &str,
-    limit: i32,
-) -> Result<Vec<Job>> {
+pub async fn get_chat_jobs(pool: &SqlitePool, chat_id: &str, limit: i32) -> Result<Vec<Job>> {
     let rows = sqlx::query(
         r#"
         SELECT job_id, chat_id, prompt, status, created_at, started_at,
@@ -251,7 +300,7 @@ pub async fn get_chat_jobs(
     .bind(limit)
     .fetch_all(pool)
     .await?;
-    
+
     let mut jobs = Vec::new();
     for row in rows {
         let status_str: String = row.get("status");
@@ -263,17 +312,17 @@ pub async fn get_chat_jobs(
             "cancelled" => JobStatus::Cancelled,
             _ => JobStatus::Pending,
         };
-        
+
         let created_at: String = row.get("created_at");
         let started_at: Option<String> = row.get("started_at");
         let completed_at: Option<String> = row.get("completed_at");
-        
+
         let tool_calls_json: Option<String> = row.get("tool_calls");
         let tool_calls = tool_calls_json.and_then(|s| serde_json::from_str(&s).ok());
-        
+
         let retry_count: Option<i64> = row.try_get("retry_count").ok();
         let execution_time_ms: Option<i64> = row.try_get("execution_time_ms").ok();
-        
+
         jobs.push(Job {
             job_id: row.get("job_id"),
             chat_id: row.get("chat_id"),
@@ -306,14 +355,14 @@ pub async fn get_chat_jobs(
             execution_time_ms: execution_time_ms.map(|v| v as u64),
         });
     }
-    
+
     Ok(jobs)
 }
 
 /// Clean up old completed/failed jobs
 pub async fn cleanup_old_jobs(pool: &SqlitePool, max_age_hours: u64) -> Result<usize> {
     let cutoff = Utc::now() - chrono::Duration::hours(max_age_hours as i64);
-    
+
     let result = sqlx::query(
         r#"
         DELETE FROM jobs
@@ -324,7 +373,6 @@ pub async fn cleanup_old_jobs(pool: &SqlitePool, max_age_hours: u64) -> Result<u
     .bind(cutoff.to_rfc3339())
     .execute(pool)
     .await?;
-    
+
     Ok(result.rows_affected() as usize)
 }
-

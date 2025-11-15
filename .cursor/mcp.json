@@ -1,16 +1,12 @@
 {
   "mcpServers": {
     "blink-agent-control": {
-      "command": "/Users/davell/Documents/github/blink/rest/.venv/bin/python3",
+      "type": "stdio",
+      "command": "/Users/davell/Documents/github/blink/mcp-server/.venv/bin/python3",
       "args": [
-        "-m",
-        "cursor_api.mcp_server"
+        "/Users/davell/Documents/github/blink/mcp-server/blink_mcp_server.py"
       ],
-      "cwd": "/Users/davell/Documents/github/blink/rest",
-      "env": {
-        "PYTHONPATH": "/Users/davell/Documents/github/blink/rest"
-      }
+      "env": {}
     }
   }
 }
-

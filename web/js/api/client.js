@@ -39,6 +39,17 @@ class ApiClient {
         return this.request(`${API_CONFIG.endpoints.listChats}?${queryParams}`);
     }
 
+    async listCursorAgentChats(params = {}) {
+        const queryParams = new URLSearchParams({
+            include_archived: params.includeArchived || false,
+            sort_by: params.sortBy || 'last_updated',
+            offset: params.offset || 0,
+            ...(params.limit && { limit: params.limit }),
+        });
+
+        return this.request(`${API_CONFIG.endpoints.listCursorAgentChats}?${queryParams}`);
+    }
+
     async getChatMessages(chatId, params = {}) {
         const queryParams = new URLSearchParams({
             include_metadata: params.includeMetadata !== undefined ? params.includeMetadata : true,

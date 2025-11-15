@@ -47,7 +47,7 @@ pub async fn test_http_connection(
 ) -> Result<HttpAgentResponse> {
     let correlation_id = crate::utils::request_context::get_correlation_id()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    
+
     tracing::info!(
         "[HTTP Connection Test] Testing connection to {} at {}\n\
          Correlation ID: {}",
@@ -55,24 +55,24 @@ pub async fn test_http_connection(
         device.api_endpoint,
         correlation_id
     );
-    
+
     let client = Client::builder()
         .timeout(Duration::from_secs(connect_timeout))
         .build()
         .map_err(|e| crate::AppError::Http(format!("Failed to create HTTP client: {}", e)))?;
-    
+
     let health_url = format!("{}/health", device.api_endpoint);
-    
+
     let result = client
         .get(&health_url)
         .header("X-Correlation-ID", &correlation_id)
         .send()
         .await;
-    
+
     match result {
         Ok(response) => {
             let status_code = response.status();
-            
+
             if status_code.is_success() {
                 // Try to parse the health response
                 match response.json::<HealthResponse>().await {
@@ -85,7 +85,7 @@ pub async fn test_http_connection(
                             health.version,
                             health.cursor_agent_path
                         );
-                        
+
                         Ok(HttpAgentResponse {
                             stdout: format!("Connection successful. Version: {}", health.version),
                             stderr: String::new(),
@@ -113,7 +113,10 @@ pub async fn test_http_connection(
                     }
                 }
             } else {
-                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                let error_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
                 tracing::error!(
                     "[HTTP Connection Test] ❌ Connection failed to {}: HTTP {}\n\
                      Error: {}",
@@ -121,11 +124,10 @@ pub async fn test_http_connection(
                     status_code,
                     error_text
                 );
-                
+
                 Err(crate::AppError::Http(format!(
                     "HTTP {} - {}",
-                    status_code,
-                    error_text
+                    status_code, error_text
                 )))
             }
         }
@@ -135,7 +137,7 @@ pub async fn test_http_connection(
                 device.name,
                 e
             );
-            
+
             if e.is_timeout() {
                 Err(crate::AppError::Timeout(format!(
                     "Connection timeout to {}",
@@ -159,15 +161,15 @@ pub async fn execute_remote_cursor_agent(
     output_format: &str,
 ) -> Result<HttpAgentResponse> {
     let model = model.unwrap_or("sonnet-4.5-thinking");
-    
+
     // Verify API key is set
     let api_key = device.api_key.as_ref().ok_or_else(|| {
         crate::AppError::Validation("Device API key is not configured".to_string())
     })?;
-    
+
     let correlation_id = crate::utils::request_context::get_correlation_id()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    
+
     tracing::info!(
         "[HTTP Remote Exec] Starting remote cursor-agent execution\n\
          Device: {} ({})\n\
@@ -186,7 +188,7 @@ pub async fn execute_remote_cursor_agent(
         prompt.len(),
         correlation_id
     );
-    
+
     // Build request payload
     let request = ExecuteRequest {
         chat_id: chat_id.to_string(),
@@ -196,7 +198,7 @@ pub async fn execute_remote_cursor_agent(
         output_format: output_format.to_string(),
         api_key: api_key.clone(),
     };
-    
+
     // Create HTTP client with timeout and connection pooling
     let client = Client::builder()
         .timeout(Duration::from_secs(settings.remote_agent_timeout))
@@ -205,9 +207,9 @@ pub async fn execute_remote_cursor_agent(
         .pool_idle_timeout(Duration::from_secs(settings.connection_pool_timeout))
         .build()
         .map_err(|e| crate::AppError::Http(format!("Failed to create HTTP client: {}", e)))?;
-    
+
     let execute_url = format!("{}/execute", device.api_endpoint);
-    
+
     tracing::info!(
         "[HTTP Remote Exec] Sending request\n\
          URL: {}\n\
@@ -217,27 +219,27 @@ pub async fn execute_remote_cursor_agent(
         settings.remote_agent_timeout,
         settings.http_retry_attempts
     );
-    
+
     // Execute with retry logic
     let retry_policy = RetryPolicy::from_settings(
         settings.http_retry_attempts,
         settings.http_retry_delay_ms,
         settings.http_max_backoff_ms,
     );
-    
+
     let start = std::time::Instant::now();
     let device_id = device.id.clone();
     let device_name = device.name.clone();
     let execute_url_clone = execute_url.clone();
     let correlation_id_clone = correlation_id.clone();
-    
+
     let retry_result = retry_policy
         .execute_with_metadata(|| {
             let client = client.clone();
             let url = execute_url_clone.clone();
             let req = request.clone();
             let corr_id = correlation_id_clone.clone();
-            
+
             async move {
                 client
                     .post(&url)
@@ -257,9 +259,9 @@ pub async fn execute_remote_cursor_agent(
             }
         })
         .await;
-    
+
     let duration = start.elapsed();
-    
+
     tracing::info!(
         "[HTTP Remote Exec] Request completed\n\
          Attempts: {}\n\
@@ -269,11 +271,11 @@ pub async fn execute_remote_cursor_agent(
         duration.as_secs_f64(),
         retry_result.succeeded
     );
-    
+
     let result = retry_result.result?;
-    
+
     let status_code = result.status();
-    
+
     if status_code.is_success() {
         // Parse the response
         match result.json::<ExecuteResponse>().await {
@@ -309,7 +311,7 @@ pub async fn execute_remote_cursor_agent(
                         &exec_response.stderr[..exec_response.stderr.len().min(500)]
                     );
                 }
-                
+
                 Ok(HttpAgentResponse {
                     stdout: exec_response.stdout,
                     stderr: exec_response.stderr,
@@ -321,15 +323,18 @@ pub async fn execute_remote_cursor_agent(
                 })
             }
             Err(e) => {
-                tracing::error!(
-                    "[HTTP Remote Exec] ❌ Failed to parse response: {}",
+                tracing::error!("[HTTP Remote Exec] ❌ Failed to parse response: {}", e);
+                Err(crate::AppError::Http(format!(
+                    "Failed to parse response: {}",
                     e
-                );
-                Err(crate::AppError::Http(format!("Failed to parse response: {}", e)))
+                )))
             }
         }
     } else {
-        let error_text = result.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = result
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         tracing::error!(
             "[HTTP Remote Exec] ❌ HTTP error {}\n\
              Device: {}\n\
@@ -338,12 +343,10 @@ pub async fn execute_remote_cursor_agent(
             device_name,
             error_text
         );
-        
+
         Err(crate::AppError::Http(format!(
             "HTTP {} - {}",
-            status_code,
-            error_text
+            status_code, error_text
         )))
     }
 }
-

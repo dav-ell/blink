@@ -213,22 +213,23 @@ async fn handle_device_commands(
     match command {
         DeviceCommands::List { json: output_json } => {
             let result = client.get("/devices").await?;
-            
+
             if output_json {
                 print_json(&result);
                 return Ok(());
             }
-            
-            let devices = result["devices"].as_array()
+
+            let devices = result["devices"]
+                .as_array()
                 .ok_or("Invalid response: missing devices array")?;
-            
+
             if devices.is_empty() {
                 println!("No devices configured.");
                 println!("\nAdd a device with:");
                 println!("  blink device add <name> <hostname> <username>");
                 return Ok(());
             }
-            
+
             println!("Found {} device(s):\n", devices.len());
             for device in devices {
                 println!("• {}", device["name"].as_str().unwrap_or("Unknown"));
@@ -266,46 +267,54 @@ async fn handle_device_commands(
                 "username": username,
                 "port": port
             });
-            
+
             if let Some(path) = cursor_agent_path {
                 data["cursor_agent_path"] = json!(path);
             }
-            
+
             let result = client.post("/devices", data).await?;
-            
+
             if output_json {
                 print_json(&result);
                 return Ok(());
             }
-            
+
             let device = &result["device"];
             let device_id = device["id"].as_str().unwrap_or("");
-            
+
             println!("✓ Device '{}' added successfully!", name);
             println!("\nDevice ID: {}", device_id);
             println!("Connection: {}@{}:{}", username, hostname, port);
             println!("\nNext steps:");
             println!("  1. Test connection: blink device test {}", device_id);
-            println!("  2. Create chat: blink chat create --device {} --dir /path/to/dir", device_id);
+            println!(
+                "  2. Create chat: blink chat create --device {} --dir /path/to/dir",
+                device_id
+            );
         }
 
         DeviceCommands::Test {
             device_id,
             json: output_json,
         } => {
-            let result = client.post(&format!("/devices/{}/test", device_id), json!({})).await?;
-            
+            let result = client
+                .post(&format!("/devices/{}/test", device_id), json!({}))
+                .await?;
+
             if output_json {
                 print_json(&result);
                 return Ok(());
             }
-            
+
             if result["success"].as_bool().unwrap_or(false) {
                 println!("✓ Connection successful!");
                 println!("Device is reachable and SSH authentication works.");
             } else {
                 println!("✗ Connection failed");
-                println!("Error: {}", result["stderr"].as_str().unwrap_or("Unknown error"));
+                println!(
+                    "Error: {}",
+                    result["stderr"].as_str().unwrap_or("Unknown error")
+                );
                 std::process::exit(1);
             }
         }
@@ -315,16 +324,16 @@ async fn handle_device_commands(
             json: output_json,
         } => {
             let result = client.delete(&format!("/devices/{}", device_id)).await?;
-            
+
             if output_json {
                 print_json(&result);
                 return Ok(());
             }
-            
+
             println!("✓ Device deleted successfully");
         }
     }
-    
+
     Ok(())
 }
 
@@ -343,24 +352,35 @@ async fn handle_chat_commands(
                 "device_id": device,
                 "working_directory": dir
             });
-            
+
             if let Some(chat_name) = name {
                 data["name"] = json!(chat_name);
             }
-            
-            let result = client.post(&format!("/devices/{}/create-chat", device), data).await?;
-            
+
+            let result = client
+                .post(&format!("/devices/{}/create-chat", device), data)
+                .await?;
+
             if output_json {
                 print_json(&result);
                 return Ok(());
             }
-            
+
             println!("✓ Chat created successfully!");
             println!("\nChat ID: {}", result["chat_id"].as_str().unwrap_or(""));
-            println!("Device: {}", result["device_name"].as_str().unwrap_or("Unknown"));
-            println!("Working Directory: {}", result["working_directory"].as_str().unwrap_or(""));
+            println!(
+                "Device: {}",
+                result["device_name"].as_str().unwrap_or("Unknown")
+            );
+            println!(
+                "Working Directory: {}",
+                result["working_directory"].as_str().unwrap_or("")
+            );
             println!("\nSend a task with:");
-            println!("  blink chat send {} \"<your prompt>\"", result["chat_id"].as_str().unwrap_or(""));
+            println!(
+                "  blink chat send {} \"<your prompt>\"",
+                result["chat_id"].as_str().unwrap_or("")
+            );
         }
 
         ChatCommands::Send {
@@ -373,24 +393,24 @@ async fn handle_chat_commands(
             let mut data = json!({
                 "prompt": prompt
             });
-            
+
             if let Some(m) = model {
                 data["model"] = json!(m);
             }
-            
+
             let endpoint = if wait {
                 format!("/chats/{}/agent-prompt", chat_id)
             } else {
                 format!("/chats/{}/agent-prompt-async", chat_id)
             };
-            
+
             let result = client.post(&endpoint, data).await?;
-            
+
             if output_json {
                 print_json(&result);
                 return Ok(());
             }
-            
+
             if wait {
                 println!("✓ Task completed\n");
                 println!("Response:");
@@ -401,28 +421,30 @@ async fn handle_chat_commands(
                 println!("✓ Task submitted");
                 println!("Job ID: {}", result["job_id"].as_str().unwrap_or(""));
                 println!("\nCheck status with:");
-                println!("  blink job status {}", result["job_id"].as_str().unwrap_or(""));
+                println!(
+                    "  blink job status {}",
+                    result["job_id"].as_str().unwrap_or("")
+                );
             }
         }
 
-        ChatCommands::List {
-            json: output_json,
-        } => {
+        ChatCommands::List { json: output_json } => {
             let result = client.get("/chats?limit=50").await?;
-            
+
             if output_json {
                 print_json(&result);
                 return Ok(());
             }
-            
-            let chats = result["chats"].as_array()
+
+            let chats = result["chats"]
+                .as_array()
                 .ok_or("Invalid response: missing chats array")?;
-            
+
             if chats.is_empty() {
                 println!("No chats found.");
                 return Ok(());
             }
-            
+
             println!("Found {} chat(s):\n", chats.len());
             for chat in chats {
                 println!("• Chat ID: {}", chat["chat_id"].as_str().unwrap_or(""));
@@ -433,7 +455,7 @@ async fn handle_chat_commands(
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -447,15 +469,15 @@ async fn handle_job_commands(
             json: output_json,
         } => {
             let result = client.get(&format!("/jobs/{}", job_id)).await?;
-            
+
             if output_json {
                 print_json(&result);
                 return Ok(());
             }
-            
+
             let status = result["status"].as_str().unwrap_or("unknown");
             println!("Job Status: {}", status);
-            
+
             match status {
                 "completed" => {
                     println!("\nResult:");
@@ -464,7 +486,10 @@ async fn handle_job_commands(
                     }
                 }
                 "failed" => {
-                    println!("\nError: {}", result["error"].as_str().unwrap_or("Unknown error"));
+                    println!(
+                        "\nError: {}",
+                        result["error"].as_str().unwrap_or("Unknown error")
+                    );
                 }
                 "pending" | "processing" => {
                     println!("\nJob is still in progress...");
@@ -479,11 +504,11 @@ async fn handle_job_commands(
             json: output_json,
         } => {
             let start = std::time::Instant::now();
-            
+
             loop {
                 let result = client.get(&format!("/jobs/{}", job_id)).await?;
                 let status = result["status"].as_str().unwrap_or("unknown");
-                
+
                 match status {
                     "completed" => {
                         if output_json {
@@ -491,7 +516,8 @@ async fn handle_job_commands(
                         } else {
                             println!("✓ Job completed\n");
                             println!("Result:");
-                            if let Some(content) = result["result"]["content"]["assistant"].as_str() {
+                            if let Some(content) = result["result"]["content"]["assistant"].as_str()
+                            {
                                 println!("{}", content);
                             }
                         }
@@ -502,7 +528,10 @@ async fn handle_job_commands(
                             print_json(&result);
                         } else {
                             eprintln!("✗ Job failed");
-                            eprintln!("Error: {}", result["error"].as_str().unwrap_or("Unknown error"));
+                            eprintln!(
+                                "Error: {}",
+                                result["error"].as_str().unwrap_or("Unknown error")
+                            );
                         }
                         std::process::exit(1);
                     }
@@ -521,16 +550,16 @@ async fn handle_job_commands(
             }
         }
     }
-    
+
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
-    
+
     let client = ApiClient::new(cli.base_url, cli.verbose);
-    
+
     match cli.command {
         Commands::Device { command } => {
             handle_device_commands(&client, command).await?;
@@ -542,6 +571,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             handle_job_commands(&client, command).await?;
         }
     }
-    
+
     Ok(())
 }

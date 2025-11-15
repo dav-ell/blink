@@ -10,4 +10,3 @@ pub fn parse_timestamp(timestamp_ms: i64) -> String {
 pub fn datetime_to_millis(dt: DateTime<Utc>) -> i64 {
     dt.timestamp_millis()
 }
-

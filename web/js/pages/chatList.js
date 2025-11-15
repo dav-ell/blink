@@ -10,6 +10,7 @@ class ChatListPage {
         this.chats = [];
         this.localChats = [];
         this.remoteChats = [];
+        this.cursorAgentChats = [];
         this.filteredChats = [];
         this.currentFilter = 'all';
         this.searchQuery = '';
@@ -124,8 +125,22 @@ class ChatListPage {
                 this.remoteChats = [];
             }
 
+            // Fetch cursor-agent chats
+            let cursorAgentChats = [];
+            try {
+                const cursorAgentResponse = await apiClient.listCursorAgentChats({
+                    includeArchived: true,
+                    sortBy: 'last_updated',
+                });
+                cursorAgentChats = cursorAgentResponse.chats || [];
+                this.cursorAgentChats = cursorAgentChats.map(chatData => Chat.fromJson(chatData));
+            } catch (cursorAgentError) {
+                console.warn('Failed to load cursor-agent chats:', cursorAgentError);
+                this.cursorAgentChats = [];
+            }
+
             // Merge all chats and sort by last updated
-            this.chats = [...this.localChats, ...this.remoteChats];
+            this.chats = [...this.localChats, ...this.remoteChats, ...this.cursorAgentChats];
             this.chats.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 
             this.filterChats();
@@ -146,6 +161,11 @@ class ChatListPage {
                 return false;
             }
             if (this.currentFilter === 'remote' && chat.location !== ChatLocation.REMOTE) {
+                return false;
+            }
+            
+            // Apply format filter
+            if (this.currentFilter === 'cursor-agent' && !chat.isCursorAgent) {
                 return false;
             }
             

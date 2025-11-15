@@ -28,7 +28,7 @@ pub struct CreateChatResponse {
 /// Create a new chat for conversation
 pub async fn create_chat() -> Result<Json<CreateChatResponse>> {
     let chat_id = create_new_chat().await?;
-    
+
     Ok(Json(CreateChatResponse {
         status: "success".to_string(),
         chat_id,
@@ -58,7 +58,7 @@ pub async fn send_agent_prompt(
     Json(request): Json<AgentPromptRequest>,
 ) -> Result<Json<AgentPromptResponse>> {
     let settings = &state.settings;
-    
+
     // Check if cursor-agent exists
     if !settings.cursor_agent_path.exists() {
         return Err(crate::AppError::CursorAgent(format!(
@@ -66,7 +66,7 @@ pub async fn send_agent_prompt(
             settings.cursor_agent_path.display()
         )));
     }
-    
+
     // Execute cursor-agent
     let response = run_cursor_agent(
         settings,
@@ -77,14 +77,14 @@ pub async fn send_agent_prompt(
         settings.cursor_agent_timeout,
     )
     .await?;
-    
+
     if !response.success {
         return Err(crate::AppError::CursorAgent(format!(
             "cursor-agent failed: {}",
             response.stderr
         )));
     }
-    
+
     // Extract parsed content or use raw stdout
     let (text, thinking, tool_calls) = if let Some(parsed) = response.parsed_content {
         let text = parsed
@@ -92,13 +92,16 @@ pub async fn send_agent_prompt(
             .and_then(|v| v.as_str())
             .unwrap_or(&response.stdout)
             .to_string();
-        let thinking = parsed.get("thinking").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let thinking = parsed
+            .get("thinking")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         let tool_calls = parsed.get("tool_calls").and_then(|v| v.as_array()).cloned();
         (text, thinking, tool_calls)
     } else {
         (response.stdout.clone(), None, None)
     };
-    
+
     // Build metadata
     let mut metadata = serde_json::Map::new();
     metadata.insert("command".to_string(), json!(response.command));
@@ -106,7 +109,7 @@ pub async fn send_agent_prompt(
     if let Some(err) = response.parse_error {
         metadata.insert("parse_error".to_string(), json!(err));
     }
-    
+
     Ok(Json(AgentPromptResponse {
         status: "success".to_string(),
         chat_id,
@@ -119,4 +122,3 @@ pub async fn send_agent_prompt(
         metadata,
     }))
 }
-

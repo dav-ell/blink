@@ -10,7 +10,7 @@ use tower::ServiceExt;
 #[tokio::test]
 async fn test_list_devices_empty() {
     let app = common::create_test_app().await;
-    
+
     let response = app
         .oneshot(
             Request::builder()
@@ -20,12 +20,12 @@ async fn test_list_devices_empty() {
         )
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::OK);
-    
+
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    
+
     assert_eq!(json["total"], 0);
     assert!(json["devices"].is_array());
 }
@@ -33,13 +33,13 @@ async fn test_list_devices_empty() {
 #[tokio::test]
 async fn test_create_device() {
     let app = common::create_test_app().await;
-    
+
     let device_data = json!({
         "name": "Test Device",
         "api_endpoint": "http://localhost:9876",
         "api_key": "test_api_key_12345678901234567890"
     });
-    
+
     let response = app
         .oneshot(
             Request::builder()
@@ -51,12 +51,12 @@ async fn test_create_device() {
         )
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::OK);
-    
+
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    
+
     assert_eq!(json["status"], "success");
     assert_eq!(json["device"]["name"], "Test Device");
 }
@@ -64,7 +64,7 @@ async fn test_create_device() {
 #[tokio::test]
 async fn test_get_device_not_found() {
     let app = common::create_test_app().await;
-    
+
     let response = app
         .oneshot(
             Request::builder()
@@ -74,14 +74,14 @@ async fn test_get_device_not_found() {
         )
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
 async fn test_list_remote_chats() {
     let app = common::create_test_app().await;
-    
+
     let response = app
         .oneshot(
             Request::builder()
@@ -91,13 +91,12 @@ async fn test_list_remote_chats() {
         )
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::OK);
-    
+
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    
+
     assert!(json["chats"].is_array());
     assert_eq!(json["total"], 0);
 }
-

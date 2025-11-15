@@ -10,9 +10,9 @@ pub(crate) struct DeviceRow {
     pub api_endpoint: String,
     pub api_key: Option<String>,
     pub cursor_agent_path: Option<String>,
-    pub created_at: String,  // ISO 8601 string
-    pub last_seen: Option<String>,  // ISO 8601 string
-    pub is_active: i32,  // SQLite stores as integer
+    pub created_at: String,        // ISO 8601 string
+    pub last_seen: Option<String>, // ISO 8601 string
+    pub is_active: i32,            // SQLite stores as integer
     pub status: String,
 }
 
@@ -83,14 +83,14 @@ impl Default for DeviceStatus {
 pub struct DeviceCreate {
     #[validate(length(min = 1, max = 100))]
     pub name: String,
-    
+
     #[validate(length(min = 1, max = 512))]
     pub api_endpoint: String,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(length(min = 16))]
     pub api_key: Option<String>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_agent_path: Option<String>,
 }
@@ -100,18 +100,18 @@ pub struct DeviceUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(length(min = 1, max = 100))]
     pub name: Option<String>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(length(min = 1, max = 512))]
     pub api_endpoint: Option<String>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(length(min = 16))]
     pub api_key: Option<String>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_agent_path: Option<String>,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_active: Option<bool>,
 }
@@ -123,8 +123,8 @@ pub(crate) struct RemoteChatRow {
     pub device_id: String,
     pub working_directory: String,
     pub name: String,
-    pub created_at: String,  // ISO 8601 string
-    pub last_updated_at: Option<String>,  // ISO 8601 string
+    pub created_at: String,              // ISO 8601 string
+    pub last_updated_at: Option<String>, // ISO 8601 string
     pub message_count: i32,
     pub last_message_preview: Option<String>,
 }
@@ -173,10 +173,10 @@ fn default_name() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct RemoteChatCreate {
     pub device_id: String,
-    
+
     #[validate(length(min = 1))]
     pub working_directory: String,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
@@ -187,4 +187,3 @@ pub enum ChatLocation {
     Local,
     Remote,
 }
-

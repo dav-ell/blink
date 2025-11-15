@@ -1,5 +1,5 @@
-use blink_api::{api, AppState, Settings, middleware, utils::metrics::MetricsCollector};
 use axum::Router;
+use blink_api::{api, middleware, utils::metrics::MetricsCollector, AppState, Settings};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 pub fn create_test_settings() -> Settings {
     let cursor_db = NamedTempFile::new().unwrap();
     let device_db = NamedTempFile::new().unwrap();
-    
+
     Settings {
         db_path: cursor_db.path().to_path_buf(),
         cursor_agent_path: "/usr/local/bin/cursor-agent".into(),
@@ -44,7 +44,7 @@ pub fn create_test_settings() -> Settings {
 pub async fn setup_test_db() -> SqlitePool {
     // Use in-memory database for fast isolated tests
     let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-    
+
     // Initialize schema
     sqlx::query(
         r#"
@@ -65,7 +65,7 @@ pub async fn setup_test_db() -> SqlitePool {
     .execute(&pool)
     .await
     .unwrap();
-    
+
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS devices (
@@ -84,7 +84,7 @@ pub async fn setup_test_db() -> SqlitePool {
     .execute(&pool)
     .await
     .unwrap();
-    
+
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS remote_chats (
@@ -103,14 +103,14 @@ pub async fn setup_test_db() -> SqlitePool {
     .execute(&pool)
     .await
     .unwrap();
-    
+
     pool
 }
 
 /// Create test Axum app with shared state
 pub async fn create_test_app() -> Router {
     let pool = setup_test_db().await;
-    
+
     let temp_dir = tempfile::tempdir().unwrap();
     let settings = Settings {
         db_path: temp_dir.path().join("cursor.db"),
@@ -140,40 +140,88 @@ pub async fn create_test_app() -> Router {
         cors_allow_origins: vec!["*".to_string()],
         cors_allow_credentials: true,
     };
-    
+
     // Keep temp dir alive during test
     std::mem::forget(temp_dir);
-    
+
     let state = Arc::new(AppState {
         settings,
         job_pool: pool,
         metrics: MetricsCollector::new(),
         circuit_breaker: middleware::DeviceCircuitBreaker::default(),
     });
-    
+
     Router::new()
         .route("/", axum::routing::get(api::health::root))
         .route("/health", axum::routing::get(api::health::health_check))
         .route("/chats", axum::routing::get(api::chats::list_chats))
-        .route("/chats/:chat_id", axum::routing::get(api::chats::get_chat_messages))
-        .route("/chats/:chat_id/metadata", axum::routing::get(api::chats::get_chat_metadata))
+        .route(
+            "/chats/:chat_id",
+            axum::routing::get(api::chats::get_chat_messages),
+        )
+        .route(
+            "/chats/:chat_id/metadata",
+            axum::routing::get(api::chats::get_chat_metadata),
+        )
         .route("/agent/models", axum::routing::get(api::agent::get_models))
-        .route("/agent/create-chat", axum::routing::post(api::agent::create_chat))
-        .route("/chats/:chat_id/agent-prompt", axum::routing::post(api::agent::send_agent_prompt))
-        .route("/chats/:chat_id/agent-prompt-async", axum::routing::post(api::jobs::create_agent_prompt_job))
-        .route("/jobs/:job_id", axum::routing::get(api::jobs::get_job_details))
-        .route("/jobs/:job_id/status", axum::routing::get(api::jobs::get_job_status))
-        .route("/chats/:chat_id/jobs", axum::routing::get(api::jobs::get_chat_jobs_list))
+        .route(
+            "/agent/create-chat",
+            axum::routing::post(api::agent::create_chat),
+        )
+        .route(
+            "/chats/:chat_id/agent-prompt",
+            axum::routing::post(api::agent::send_agent_prompt),
+        )
+        .route(
+            "/chats/:chat_id/agent-prompt-async",
+            axum::routing::post(api::jobs::create_agent_prompt_job),
+        )
+        .route(
+            "/jobs/:job_id",
+            axum::routing::get(api::jobs::get_job_details),
+        )
+        .route(
+            "/jobs/:job_id/status",
+            axum::routing::get(api::jobs::get_job_status),
+        )
+        .route(
+            "/chats/:chat_id/jobs",
+            axum::routing::get(api::jobs::get_chat_jobs_list),
+        )
         .route("/devices", axum::routing::post(api::devices::create_device))
         .route("/devices", axum::routing::get(api::devices::list_devices))
-        .route("/devices/:device_id", axum::routing::get(api::devices::get_device))
-        .route("/devices/:device_id", axum::routing::put(api::devices::update_device))
-        .route("/devices/:device_id", axum::routing::delete(api::devices::delete_device))
-        .route("/devices/:device_id/test", axum::routing::post(api::devices::test_device_connection))
-        .route("/devices/:device_id/verify-agent", axum::routing::post(api::devices::verify_agent_installed))
-        .route("/devices/:device_id/create-chat", axum::routing::post(api::devices::create_device_chat))
-        .route("/devices/chats/remote", axum::routing::get(api::devices::list_remote_chats))
-        .route("/devices/chats/:chat_id/send-prompt", axum::routing::post(api::devices::send_remote_prompt))
+        .route(
+            "/devices/:device_id",
+            axum::routing::get(api::devices::get_device),
+        )
+        .route(
+            "/devices/:device_id",
+            axum::routing::put(api::devices::update_device),
+        )
+        .route(
+            "/devices/:device_id",
+            axum::routing::delete(api::devices::delete_device),
+        )
+        .route(
+            "/devices/:device_id/test",
+            axum::routing::post(api::devices::test_device_connection),
+        )
+        .route(
+            "/devices/:device_id/verify-agent",
+            axum::routing::post(api::devices::verify_agent_installed),
+        )
+        .route(
+            "/devices/:device_id/create-chat",
+            axum::routing::post(api::devices::create_device_chat),
+        )
+        .route(
+            "/devices/chats/remote",
+            axum::routing::get(api::devices::list_remote_chats),
+        )
+        .route(
+            "/devices/chats/:chat_id/send-prompt",
+            axum::routing::post(api::devices::send_remote_prompt),
+        )
         .with_state(state)
 }
 
@@ -183,14 +231,14 @@ pub fn setup_cursor_db() -> (rusqlite::Connection, tempfile::TempDir) {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("cursor.db");
     let conn = rusqlite::Connection::open(&db_path).unwrap();
-    
+
     // Create schema
     conn.execute(
         "CREATE TABLE itemTable (key TEXT PRIMARY KEY, value TEXT)",
         [],
     )
     .unwrap();
-    
+
     // Insert sample chat data
     let chat_id_1 = "test-chat-1";
     let chat_data_1 = serde_json::json!({
@@ -210,7 +258,7 @@ pub fn setup_cursor_db() -> (rusqlite::Connection, tempfile::TempDir) {
             }
         ]
     });
-    
+
     conn.execute(
         "INSERT INTO itemTable (key, value) VALUES (?, ?)",
         [
@@ -219,7 +267,7 @@ pub fn setup_cursor_db() -> (rusqlite::Connection, tempfile::TempDir) {
         ],
     )
     .unwrap();
-    
+
     let chat_id_2 = "test-chat-2";
     let chat_data_2 = serde_json::json!({
         "id": chat_id_2,
@@ -227,7 +275,7 @@ pub fn setup_cursor_db() -> (rusqlite::Connection, tempfile::TempDir) {
         "createdAt": "2024-01-02T00:00:00Z",
         "bubbles": []
     });
-    
+
     conn.execute(
         "INSERT INTO itemTable (key, value) VALUES (?, ?)",
         [
@@ -236,7 +284,6 @@ pub fn setup_cursor_db() -> (rusqlite::Connection, tempfile::TempDir) {
         ],
     )
     .unwrap();
-    
+
     (conn, temp_dir)
 }
-

@@ -183,11 +183,22 @@ class ChatDetailPage {
                 statsHtml += `<span id="lastUpdated">${Formatter.formatTime(this.chatMetadata.last_updated_at_iso)}</span>`;
             }
             
+            // Add format badge for cursor-agent chats
+            let formatBadgeHtml = '';
+            if (this.chatMetadata.format === 'cursor-agent') {
+                formatBadgeHtml = `
+                    <span class="badge badge-cursor-agent" style="background-color: var(--color-accent, #7c3aed); color: white; font-size: 11px;">
+                        🤖 cursor-agent
+                    </span>
+                `;
+            }
+            
             // Add remote info if chat is remote
             if (this.chat && this.chat.isRemote && this.chat.remoteInfo) {
                 const remoteInfo = this.chat.remoteInfo;
                 statsHtml = `
                     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        ${formatBadgeHtml}
                         <span class="badge badge-remote" style="font-size: 11px;">
                             📡 ${escapeHtml(remoteInfo.deviceName)}
                         </span>
@@ -197,6 +208,16 @@ class ChatDetailPage {
                         <span title="${escapeHtml(remoteInfo.workingDirectory)}" style="font-size: 11px;">
                             📁 ${escapeHtml(remoteInfo.workingDirectory)}
                         </span>
+                    </div>
+                    <div style="margin-top: 4px;">
+                        ${statsHtml}
+                    </div>
+                `;
+            } else if (formatBadgeHtml) {
+                // Show format badge even for local cursor-agent chats
+                statsHtml = `
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        ${formatBadgeHtml}
                     </div>
                     <div style="margin-top: 4px;">
                         ${statsHtml}

@@ -19,6 +19,7 @@ export class Chat {
         this.messageCount = data.message_count || this.messages.length;
         this.location = data.location || ChatLocation.LOCAL;
         this.remoteInfo = data.device_id ? RemoteChatInfo.fromJson(data) : null;
+        this.format = data.format || 'cursor-ide'; // 'cursor-agent' or 'cursor-ide'
     }
 
     get preview() {
@@ -43,6 +44,14 @@ export class Chat {
 
     get isLocal() {
         return this.location === ChatLocation.LOCAL;
+    }
+
+    get isCursorAgent() {
+        return this.format === 'cursor-agent';
+    }
+
+    get isCursorIDE() {
+        return this.format === 'cursor-ide';
     }
 
     static fromJson(json) {

@@ -1,14 +1,14 @@
 use axum::{extract::State, Json};
 use serde_json::{json, Value};
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::{AppState, Result};
 
 /// Root endpoint - API information
 pub async fn root(State(state): State<Arc<AppState>>) -> Json<Value> {
     let cursor_agent_exists = Path::new(&state.settings.cursor_agent_path).exists();
-    
+
     Json(json!({
         "name": "Cursor Chat API",
         "version": "3.0.0",
@@ -43,46 +43,50 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Result<Json<Val
     let settings = &state.settings;
     let correlation_id = crate::utils::request_context::get_correlation_id()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    
+
     // Check cursor agent
     let cursor_agent_available = Path::new(&settings.cursor_agent_path).exists();
-    
+
     // Check cursor database
     let db_path = settings.db_path.clone();
     let db_check = tokio::task::spawn_blocking(move || {
         let conn = rusqlite::Connection::open(&db_path)?;
-        
-        let chat_count: i32 = conn.query_row(
-            "SELECT COUNT(*) FROM cursorDiskKV WHERE key LIKE 'composerData:%'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(0);
-        
-        let message_count: i32 = conn.query_row(
-            "SELECT COUNT(*) FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(0);
-        
+
+        let chat_count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM cursorDiskKV WHERE key LIKE 'composerData:%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        let message_count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
         Ok::<_, crate::AppError>((chat_count, message_count))
     })
     .await
     .map_err(|e| crate::AppError::Internal(format!("Task join error: {}", e)))?;
-    
+
     let (chat_count, message_count, cursor_db_status) = match db_check {
         Ok((chats, messages)) => (chats, messages, "healthy"),
         Err(_) => (0, 0, "unavailable"),
     };
-    
+
     // Check internal database (jobs & devices)
     let job_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM jobs")
         .fetch_one(&state.job_pool)
         .await
         .unwrap_or(0);
-    
+
     // Get metrics summary
     let metrics_snapshot = state.metrics.snapshot();
-    
+
     // Overall health status
     let overall_status = if cursor_agent_available && cursor_db_status == "healthy" {
         "healthy"
@@ -91,7 +95,7 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Result<Json<Val
     } else {
         "unhealthy"
     };
-    
+
     Ok(Json(json!({
         "status": overall_status,
         "correlation_id": correlation_id,
@@ -121,4 +125,3 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Result<Json<Val
         }
     })))
 }
-
