@@ -13,6 +13,20 @@ use super::ServerState;
 use crate::capture::WindowInfo;
 use crate::input::{KeyEvent, MouseEvent};
 
+/// ICE candidate with full WebRTC fields
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IceCandidate {
+    /// The SDP candidate string
+    pub candidate: String,
+    /// The SDP media stream identification tag
+    #[serde(default)]
+    pub sdp_mid: Option<String>,
+    /// The index of the media description in the SDP
+    #[serde(default, alias = "sdpMLineIndex")]
+    pub sdp_m_line_index: Option<u16>,
+}
+
 /// Incoming WebSocket message types
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -20,7 +34,7 @@ pub enum IncomingMessage {
     /// WebRTC offer from client
     Offer { sdp: String },
     /// ICE candidate from client
-    Ice { candidate: String },
+    Ice { candidate: IceCandidate },
     /// Subscribe to window streams
     Subscribe { window_ids: Vec<u32> },
     /// Mouse input event
@@ -38,7 +52,7 @@ pub enum OutgoingMessage {
     /// WebRTC answer to client
     Answer { sdp: String },
     /// ICE candidate to client
-    Ice { candidate: String },
+    Ice { candidate: IceCandidate },
     /// List of available windows
     WindowList { windows: Vec<WindowInfo> },
     /// Window closed notification
@@ -132,8 +146,8 @@ where
         }
 
         IncomingMessage::Ice { candidate } => {
-            debug!("Received ICE candidate");
-            state.webrtc_manager.write().await.add_ice_candidate(&candidate).await?;
+            debug!("Received ICE candidate: {:?}", candidate);
+            state.webrtc_manager.write().await.add_ice_candidate(candidate).await?;
         }
 
         IncomingMessage::Subscribe { window_ids } => {

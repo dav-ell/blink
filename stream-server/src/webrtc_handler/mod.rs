@@ -95,15 +95,17 @@ impl WebRtcManager {
     }
 
     /// Add ICE candidate from client
-    pub async fn add_ice_candidate(&mut self, candidate: &str) -> Result<()> {
+    pub async fn add_ice_candidate(&mut self, candidate: crate::server::websocket::IceCandidate) -> Result<()> {
         let peer_connection = self
             .peer_connection
             .as_ref()
             .ok_or_else(|| anyhow!("No peer connection established"))?;
 
         let ice_candidate = RTCIceCandidateInit {
-            candidate: candidate.to_string(),
-            ..Default::default()
+            candidate: candidate.candidate,
+            sdp_mid: candidate.sdp_mid,
+            sdp_mline_index: candidate.sdp_m_line_index,
+            username_fragment: None,
         };
 
         peer_connection.add_ice_candidate(ice_candidate).await?;
