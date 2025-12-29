@@ -159,6 +159,7 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
                       inputService: inputService,
                       streamService: streamProvider.streamService,
                       windowId: activeWindow.id,
+                      videoAspectRatio: activeWindow.aspectRatio,
                       onTwoFingerSwipeLeft: _switchToNextWindow,
                       onTwoFingerSwipeRight: _switchToPreviousWindow,
                       onThreeFingerSwipeDown: _showGridView,

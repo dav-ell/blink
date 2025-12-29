@@ -184,19 +184,15 @@ class InputService extends ChangeNotifier {
     });
   }
 
-  /// Send a key press event
+  /// Send a key press event (sends both down and up)
   void sendKeyPress({
     required int windowId,
     required int keyCode,
     List<KeyModifier> modifiers = const [],
   }) {
-    _sendEvent({
-      'type': 'key',
-      'window_id': windowId,
-      'action': 'press',
-      'key_code': keyCode,
-      'modifiers': modifiers.map((m) => m.name).toList(),
-    });
+    // Server expects separate down and up events
+    sendKeyDown(windowId: windowId, keyCode: keyCode, modifiers: modifiers);
+    sendKeyUp(windowId: windowId, keyCode: keyCode, modifiers: modifiers);
   }
 
   /// Send a key down event

@@ -96,35 +96,96 @@ class _KeyboardBarState extends State<KeyboardBar> {
     }
   }
 
+  String _previousText = '';
+  
   void _onTextChanged(String text) {
     // #region agent log
     _debugLogKeyboard('keyboard_bar.dart:_onTextChanged', 'Text changed callback', {
       'text': text,
       'textLength': text.length,
       'isEmpty': text.isEmpty,
+      'previousText': _previousText,
+      'previousTextLength': _previousText.length,
       'windowId': widget.windowId,
       'inputServiceConnected': widget.inputService.isConnected,
-    }, 'E');
+    }, 'A');
     // #endregion
     
-    if (text.isNotEmpty) {
-      // Send the last character typed
-      final lastChar = text.characters.last;
+    // FIX for Hypothesis A: Detect backspace when text gets shorter
+    if (text.length < _previousText.length) {
+      // #region agent log
+      _debugLogKeyboard('keyboard_bar.dart:_onTextChanged:backspaceDetected', 'Backspace detected - sending key', {
+        'text': text,
+        'previousText': _previousText,
+        'deletedCount': _previousText.length - text.length,
+        'windowId': widget.windowId,
+      }, 'A');
+      // #endregion
+      
+      // Calculate how many characters were deleted (usually 1 for backspace)
+      final deletedCount = _previousText.length - text.length;
+      for (var i = 0; i < deletedCount; i++) {
+        // Send backspace key (macOS key code 51)
+        Haptics.tap();
+        widget.inputService.sendKeyPress(
+          windowId: widget.windowId,
+          keyCode: 51, // Backspace key code on macOS
+        );
+      }
+      _previousText = text;
+      return; // Don't process as text input
+    }
+    
+    // Detect new characters added (could be more than one if pasting)
+    if (text.length > _previousText.length) {
+      // Get the newly added characters
+      final newChars = text.substring(_previousText.length);
       
       // #region agent log
-      _debugLogKeyboard('keyboard_bar.dart:_onTextChanged:sending', 'Sending text input', {
-        'lastChar': lastChar,
+      _debugLogKeyboard('keyboard_bar.dart:_onTextChanged:newChars', 'New characters detected', {
+        'newChars': newChars,
+        'text': text,
+        'previousText': _previousText,
         'windowId': widget.windowId,
       }, 'D');
       // #endregion
       
-      widget.inputService.sendTextInput(
-        windowId: widget.windowId,
-        text: lastChar,
-      );
-      // Clear the controller to be ready for next input
-      _textController.clear();
+      // Send each new character
+      for (final char in newChars.characters) {
+        widget.inputService.sendTextInput(
+          windowId: widget.windowId,
+          text: char,
+        );
+      }
     }
+    
+    _previousText = text;
+    
+    // Periodically clear the text field to prevent excessive accumulation
+    // but preserve the ability to detect backspace
+    if (text.length > 100) {
+      _textController.clear();
+      _previousText = '';
+    }
+  }
+  
+  void _onSubmitted(String value) {
+    // #region agent log
+    _debugLogKeyboard('keyboard_bar.dart:_onSubmitted', 'Done/Submit pressed - sending Enter', {
+      'value': value,
+      'windowId': widget.windowId,
+    }, 'B');
+    // #endregion
+    
+    // FIX for Hypothesis B: Send Enter key when Done is pressed
+    Haptics.tap();
+    widget.inputService.sendKeyPress(
+      windowId: widget.windowId,
+      keyCode: 36, // Return/Enter key code on macOS
+    );
+    
+    // Keep focus so user can continue typing
+    _focusNode.requestFocus();
   }
 
   void _sendSpecialKey(int keyCode, {List<KeyModifier> modifiers = const []}) {
@@ -213,6 +274,7 @@ class _KeyboardBarState extends State<KeyboardBar> {
             decoration: const BoxDecoration(),
             padding: const EdgeInsets.symmetric(horizontal: RemoteTheme.spacingSM),
             onChanged: _onTextChanged,
+            onSubmitted: _onSubmitted, // FIX: Handle Done/Enter button
             autocorrect: false,
             enableSuggestions: false,
           ),

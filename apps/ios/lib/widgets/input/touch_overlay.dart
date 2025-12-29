@@ -31,6 +31,7 @@ class TouchOverlay extends StatefulWidget {
   final InputService inputService;
   final StreamService? streamService;
   final int windowId;
+  final double? videoAspectRatio; // For letterbox correction
   final VoidCallback? onTwoFingerSwipeLeft;
   final VoidCallback? onTwoFingerSwipeRight;
   final VoidCallback? onThreeFingerSwipeDown;
@@ -41,6 +42,7 @@ class TouchOverlay extends StatefulWidget {
     required this.inputService,
     required this.windowId,
     this.streamService,
+    this.videoAspectRatio,
     this.onTwoFingerSwipeLeft,
     this.onTwoFingerSwipeRight,
     this.onThreeFingerSwipeDown,
@@ -121,10 +123,48 @@ class _TouchOverlayState extends State<TouchOverlay> {
     _sendViewportUpdate();
   }
 
+  /// Convert screen tap position to normalized content position (0-1)
+  /// This accounts for zoom/pan transforms AND letterboxing
   Offset _normalizePosition(Offset localPosition, Size size) {
+    // When zoomed, we need to reverse the transform to find the actual content position
+    // The transform is: scale then translate(offset/scale)
+    // So content position = (screenPos - offset) / scale
+    Offset contentPosition;
+    if (_scale > 1.0) {
+      contentPosition = (localPosition - _offset) / _scale;
+    } else {
+      contentPosition = localPosition;
+    }
+    
+    // Account for letterboxing if video aspect ratio is known
+    // The video uses ObjectFitContain, so it's letterboxed to fit
+    double adjustedX = contentPosition.dx;
+    double adjustedY = contentPosition.dy;
+    double effectiveWidth = size.width;
+    double effectiveHeight = size.height;
+    
+    if (widget.videoAspectRatio != null && widget.videoAspectRatio! > 0) {
+      final widgetAspectRatio = size.width / size.height;
+      final videoAspectRatio = widget.videoAspectRatio!;
+      
+      if (videoAspectRatio > widgetAspectRatio) {
+        // Video is wider - letterboxed top/bottom (black bars on top and bottom)
+        final videoHeight = size.width / videoAspectRatio;
+        final letterboxOffset = (size.height - videoHeight) / 2;
+        adjustedY = contentPosition.dy - letterboxOffset;
+        effectiveHeight = videoHeight;
+      } else {
+        // Video is taller - pillarboxed left/right (black bars on sides)
+        final videoWidth = size.height * videoAspectRatio;
+        final pillarboxOffset = (size.width - videoWidth) / 2;
+        adjustedX = contentPosition.dx - pillarboxOffset;
+        effectiveWidth = videoWidth;
+      }
+    }
+    
     return Offset(
-      (localPosition.dx / size.width).clamp(0.0, 1.0),
-      (localPosition.dy / size.height).clamp(0.0, 1.0),
+      (adjustedX / effectiveWidth).clamp(0.0, 1.0),
+      (adjustedY / effectiveHeight).clamp(0.0, 1.0),
     );
   }
 
@@ -272,7 +312,6 @@ class _TouchOverlayState extends State<TouchOverlay> {
         'newScale': newScale,
         'currentScale': _scale,
         'focalPoint': {'dx': details.localFocalPoint.dx, 'dy': details.localFocalPoint.dy},
-        'initialFocalPoint': {'dx': _focalPoint.dx, 'dy': _focalPoint.dy},
       }, 'B');
       // #endregion
       
@@ -282,19 +321,21 @@ class _TouchOverlayState extends State<TouchOverlay> {
           _scale = newScale;
           
           if (_scale > 1.0) {
-            // Calculate offset to keep the focal point stable during zoom
-            // The focal point should stay at the same screen position
-            // Formula: newOffset = focalPoint - (focalPoint - oldOffset) * (newScale / oldScale)
-            final scaleRatio = _scale / oldScale;
-            final focalPointInContent = _focalPoint - _previousOffset;
-            _offset = _focalPoint - (focalPointInContent * scaleRatio);
+            // Focal-point zoom algorithm:
+            // 1. Find content position under the current focal point
+            // 2. After scaling, adjust offset so that same content stays under focal point
+            //
+            // Content position (in unscaled content coords):
+            //   contentPos = (focalPoint - offset) / oldScale
+            // New offset to keep contentPos under focalPoint:
+            //   focalPoint = contentPos * newScale + newOffset
+            //   newOffset = focalPoint - contentPos * newScale
             
-            // Also apply pan movement if fingers moved
-            final panDelta = details.localFocalPoint - _dragStartPosition!;
-            _offset = _offset + panDelta;
+            final focalPoint = details.localFocalPoint;
+            final contentPos = (focalPoint - _offset) / oldScale;
+            _offset = focalPoint - (contentPos * _scale);
             
             _clampOffset(size);
-            _dragStartPosition = details.localFocalPoint;
           } else {
             _offset = Offset.zero;
           }

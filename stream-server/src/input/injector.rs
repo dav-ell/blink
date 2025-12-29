@@ -1,6 +1,7 @@
 //! CGEvent input injection for mouse and keyboard events
 
 use anyhow::{anyhow, Result};
+use core_graphics::display::CGDisplay;
 use core_graphics::event::{
     CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGMouseButton,
 };
@@ -112,13 +113,35 @@ impl InputInjector {
     }
 
     /// Convert normalized coordinates to screen coordinates
+    /// 
+    /// Note: Window bounds from ScreenCaptureKit are in Quartz coordinates (origin at bottom-left),
+    /// but CGEvent uses coordinates with origin at top-left. We need to convert Y.
     fn to_screen_coords(&self, window_id: u32, norm_x: f64, norm_y: f64) -> Result<CGPoint> {
         let bounds = self
             .get_bounds(window_id)
             .ok_or_else(|| anyhow!("Window bounds not found for {}", window_id))?;
 
+        // Get main display height for Y coordinate conversion
+        let main_display = CGDisplay::main();
+        let screen_height = main_display.bounds().size.height;
+
+        // X coordinate is straightforward (left-to-right is same in both systems)
         let screen_x = bounds.x + (norm_x * bounds.width);
-        let screen_y = bounds.y + (norm_y * bounds.height);
+        
+        // Y coordinate conversion:
+        // - Quartz: bounds.y is distance from screen BOTTOM to window BOTTOM
+        // - CGEvent: needs distance from screen TOP
+        // 
+        // Window top in Quartz = bounds.y + bounds.height
+        // Window top in CGEvent = screen_height - (bounds.y + bounds.height)
+        // Click position = window_top_cgevent + (norm_y * bounds.height)
+        let window_top_cgevent = screen_height - (bounds.y + bounds.height);
+        let screen_y = window_top_cgevent + (norm_y * bounds.height);
+
+        debug!(
+            "Coord conversion: norm({:.3},{:.3}) -> screen({:.1},{:.1}), bounds=({:.1},{:.1},{:.1},{:.1}), screen_h={:.1}",
+            norm_x, norm_y, screen_x, screen_y, bounds.x, bounds.y, bounds.width, bounds.height, screen_height
+        );
 
         Ok(CGPoint::new(screen_x, screen_y))
     }

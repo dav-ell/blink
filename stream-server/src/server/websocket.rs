@@ -179,6 +179,12 @@ where
             for window_id in window_ids {
                 state.capture_manager.start_capture(window_id)?;
                 
+                // Update input injector with window bounds for coordinate conversion
+                if let Some(bounds) = state.capture_manager.get_window_bounds(window_id) {
+                    state.input_injector.update_window_bounds(window_id, bounds);
+                    debug!("Updated input bounds for window {}", window_id);
+                }
+                
                 // Add track and get renegotiation offer if needed
                 if let Some(offer_sdp) = state.webrtc_manager.write().await.add_window_track(window_id).await? {
                     // Send renegotiation offer to client
