@@ -80,6 +80,14 @@ pub struct KeyEvent {
     pub modifiers: Vec<KeyModifier>,
 }
 
+/// Text input event - for typing text characters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextEvent {
+    pub window_id: u32,
+    /// The text to type
+    pub text: String,
+}
+
 /// Handles input injection via CGEvent
 pub struct InputInjector {
     /// Cache of window bounds for coordinate conversion
@@ -345,6 +353,32 @@ impl InputInjector {
         }
 
         flags
+    }
+
+    /// Inject text input by typing each character
+    pub fn inject_text(&self, event: &TextEvent) -> Result<()> {
+        let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+            .map_err(|_| anyhow!("Failed to create event source"))?;
+
+        for ch in event.text.chars() {
+            // Create a keyboard event and set the Unicode string
+            let key_down = CGEvent::new_keyboard_event(source.clone(), 0, true)
+                .map_err(|_| anyhow!("Failed to create key down event for text"))?;
+            
+            // Set the Unicode character to type
+            let ch_str = ch.to_string();
+            key_down.set_string(&ch_str);
+            key_down.post(CGEventTapLocation::HID);
+
+            let key_up = CGEvent::new_keyboard_event(source.clone(), 0, false)
+                .map_err(|_| anyhow!("Failed to create key up event for text"))?;
+            key_up.set_string(&ch_str);
+            key_up.post(CGEventTapLocation::HID);
+
+            debug!("Injected text character: '{}'", ch);
+        }
+
+        Ok(())
     }
 }
 

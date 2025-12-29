@@ -11,7 +11,7 @@ use tracing::{debug, error, info, warn};
 
 use super::ServerState;
 use crate::capture::WindowInfo;
-use crate::input::{KeyEvent, MouseEvent};
+use crate::input::{KeyEvent, MouseEvent, TextEvent};
 
 /// ICE candidate with full WebRTC fields
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +55,8 @@ pub enum IncomingMessage {
     Mouse(MouseEvent),
     /// Keyboard input event
     Key(KeyEvent),
+    /// Text input event (for typing text)
+    Text(TextEvent),
     /// Request window list
     GetWindows,
 }
@@ -218,6 +220,11 @@ where
         IncomingMessage::Key(event) => {
             debug!("Key event: {:?}", event);
             state.input_injector.inject_key(&event)?;
+        }
+
+        IncomingMessage::Text(event) => {
+            debug!("Text event: {:?}", event);
+            state.input_injector.inject_text(&event)?;
         }
 
         IncomingMessage::GetWindows => {
