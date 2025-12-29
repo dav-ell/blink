@@ -1,423 +1,214 @@
-# Blink - Mobile Chat Interface for Cursor IDE
+# Blink - Remote Desktop for Cursor IDE
 
-A Flutter mobile app that lets you view and continue your Cursor IDE chat conversations from iOS/Android devices with full conversation context.
+Control your Mac's Cursor IDE from your iPhone with low-latency window streaming.
 
----
-
-## ⚠️ EXPERIMENTAL - READ BEFORE USE
-
-**This project is experimental and writes directly to Cursor's SQLite database.**
-
-### Critical Warnings:
-
-1. **Database Corruption Risk** - Direct database writes can corrupt your Cursor chat history
-2. **Backup Required** - Always backup your database before use:
-   ```bash
-   # macOS
-   cp ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb \
-      ~/Library/Application\ Support/Cursor/User/globalStorage/state.vscdb.backup
-   ```
-3. **Use at Your Own Risk** - Test with non-critical chats first.
-
----
+```
+┌──────────────────┐         WebRTC          ┌──────────────────┐
+│   macOS Server   │ ◀───────────────────────│   iOS Client     │
+│                  │         Stream          │                  │
+│  ┌────────────┐  │                         │  ┌────────────┐  │
+│  │   Cursor   │──┼─────────────────────────┼──│   Live     │  │
+│  │   Window   │  │                         │  │   View     │  │
+│  └────────────┘  │                         │  └────────────┘  │
+│                  │◀────────────────────────│                  │
+│  CGEvent Input   │      Touch Events       │  Tap/Drag/Scroll │
+└──────────────────┘                         └──────────────────┘
+```
 
 ## Overview
 
-Blink provides a mobile interface to your Cursor IDE chats, allowing you to:
-- Browse all your Cursor chat sessions
-- View full conversation history
-- Continue conversations with automatic context preservation
-- Use multiple AI models (GPT-5, Claude, Gemini, etc.)
-- Track async job processing in real-time
+Blink lets you stream and control multiple macOS windows from your iPhone:
+
+- **Multi-window streaming** - View Cursor, Terminal, and other apps simultaneously
+- **Touch-to-input** - Tap to click, drag to move, pinch to zoom
+- **Zero-config discovery** - Automatically finds servers on your network via mDNS
+- **Low latency** - Hardware-accelerated H.264 via WebRTC
 
 ## Architecture
 
-Blink uses a three-layer architecture:
-
-```
-┌─────────────────────────────────────┐
-│   Flutter App (iOS/Android)         │
-│   - Chat list & detail screens      │
-│   - Async job polling                │
-│   - Real-time status updates         │
-└──────────────┬──────────────────────┘
-               │ HTTP REST API
-┌──────────────▼──────────────────────┐
-│   Python FastAPI Backend             │
-│   - Reads Cursor's SQLite database   │
-│   - Manages async job queue          │
-│   - Calls cursor-agent CLI           │
-└──────────────┬──────────────────────┘
-               │ CLI Execution
-┌──────────────▼──────────────────────┐
-│   cursor-agent (Official CLI)        │
-│   - Handles AI model routing         │
-│   - Auto-includes conversation via   │
-│     --resume flag                    │
-└─────────────────────────────────────┘
-```
-
-### Frontend (Flutter)
-
-**Location:** `lib/`
-
-**Key Components:**
-- `screens/chat_list_screen.dart` - Browse all chats
-- `screens/chat_detail_screen.dart` - View messages and send prompts
-- `services/cursor_agent_service.dart` - REST API client
-- `services/job_polling_service.dart` - Async job status tracking
-- `models/` - Message, Chat, Job data models
-- `widgets/` - Reusable UI components (message bubbles, processing indicators)
-
-**State Management:** Provider pattern for theme and chat state
-
-### Backend (Python FastAPI)
-
-**Location:** `rest/cursor_chat_api.py`
-
-**Capabilities:**
-- Direct SQLite access to Cursor's database (`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`)
-- Async job queue for non-blocking cursor-agent calls
-- Full CRUD operations on chat messages
-- Job status tracking and polling endpoints
-
-**Key Features:**
-- In-memory job storage with automatic cleanup (1 hour retention)
-- Database transaction management for atomic message writes
-- Concurrent cursor-agent execution support
-
-### Cursor Agent
-
-**Official Cursor CLI tool** - Installed separately
-
-**Key Capability:** The `--resume <chat_id>` flag automatically includes all previous conversation history, eliminating the need for manual history formatting in the backend.
-
-## Features
-
-- ✅ **View All Chats** - Browse your Cursor conversations with metadata
-- ✅ **Full History** - See complete conversation timeline
-- ✅ **Continue Conversations** - Send new messages with automatic context
-- ✅ **Async Processing** - Submit prompts and poll for results (non-blocking)
-- ✅ **Multiple AI Models** - GPT-5, Claude Sonnet 4.5, Opus 4.1, Gemini, and more
-- ✅ **Rich Content Display** - Tool calls, code blocks, thinking blocks, todos
-- ✅ **Real-time Status** - Live updates on message processing status
-- ✅ **Batch Operations** - Fetch multiple chat summaries at once
-
-## Setup
-
-### Prerequisites
-
-- Python 3.8+ (backend)
-- Flutter 3.0+ (frontend)
-- Cursor IDE installed (for database access)
-- cursor-agent CLI
-
-### Backend Setup
-
-1. **Install cursor-agent** (if not already installed):
-```bash
-curl https://cursor.com/install -fsS | bash
-```
-
-2. **Install Python dependencies**:
-```bash
-cd rest
-pip install -r requirements_api.txt
-```
-
-3. **Start the API server**:
-```bash
-./start_api.sh
-```
-
-The server will start on `http://localhost:8000` with API documentation at `http://localhost:8000/docs`
-
-### Frontend Setup
-
-1. **Install Flutter dependencies**:
-```bash
-flutter pub get
-```
-
-2. **Configure API endpoint**:
-
-Edit `lib/services/cursor_agent_service.dart` and update the `baseUrl`:
-```dart
-// For iOS Simulator
-final String baseUrl = 'http://127.0.0.1:8000';
-
-// For physical iOS device (use your Mac's IP)
-final String baseUrl = 'http://192.168.1.120:8000';
-```
-
-3. **Run the app**:
-```bash
-# iOS Simulator
-flutter run -d iPhone
-
-# Physical device
-flutter run
-```
-
-## How It Works
-
-### Conversation Flow
-
-When you continue a conversation in Blink:
-
-1. **Frontend** - User selects a chat and types a message
-2. **API Call** - App calls `POST /chats/{chat_id}/agent-prompt-async`
-3. **Job Creation** - Backend creates an async job and returns `job_id`
-4. **User Message** - Backend writes user message to Cursor database
-5. **Cursor Agent** - Backend executes `cursor-agent --resume {chat_id} "prompt"`
-6. **Auto History** - cursor-agent automatically loads conversation history
-7. **AI Response** - Backend writes AI response to database
-8. **Polling** - App polls `GET /jobs/{job_id}` for status updates
-9. **Completion** - When status is "completed", app displays the response
-
-### Key Insight: The `--resume` Flag
-
-The cursor-agent's `--resume` flag handles all history automatically. The backend simply provides the chat ID, and cursor-agent loads all previous messages as context. This eliminates complex history management code.
-
-### Async Job System
-
-Blink uses an async job pattern for better UX:
-
-- **Submit** - Prompt submitted, job ID returned immediately
-- **Pending** - Job queued for processing
-- **Processing** - cursor-agent running
-- **Completed** - Response ready
-- **Failed** - Error occurred (with details)
-
-The frontend polls every 2 seconds during processing, showing elapsed time and status.
-
-## API Endpoints
-
-### Chat Operations
-- `GET /chats` - List all chats with metadata
-- `GET /chats/{id}` - Get full chat with all messages
-- `GET /chats/{id}/summary` - Get chat preview with recent messages
-- `GET /chats/{id}/metadata` - Get chat metadata only
-- `POST /chats/batch-info` - Get info for multiple chats at once
-
-### Conversation
-- `POST /chats/{id}/agent-prompt-async` - Submit prompt (async, returns job_id)
-- `POST /chats/{id}/agent-prompt` - Submit prompt (sync, blocks until complete)
-- `POST /agent/create-chat` - Create new chat conversation
-
-### Job Management
-- `GET /jobs/{job_id}` - Get full job details
-- `GET /jobs/{job_id}/status` - Quick status check
-- `GET /chats/{id}/jobs` - List all jobs for a chat
-- `DELETE /jobs/{job_id}` - Cancel pending/processing job
-
-### System
-- `GET /health` - Health check with database stats
-- `GET /agent/models` - List available AI models
-
-**Full API Documentation:** `http://localhost:8000/docs` (interactive Swagger UI)
-
-## Project Structure
-
 ```
 blink/
-├── lib/                          # Flutter frontend
-│   ├── main.dart                # App entry point
-│   ├── models/                  # Data models
-│   │   ├── chat.dart           # Chat metadata
-│   │   ├── message.dart        # Message with status
-│   │   ├── job.dart            # Async job tracking
-│   │   ├── code_block.dart     # Code display
-│   │   ├── tool_call.dart      # Tool call data
-│   │   └── todo_item.dart      # Todo items
-│   ├── screens/                 # UI screens
-│   │   ├── chat_list_screen.dart    # Browse chats
-│   │   └── chat_detail_screen.dart  # Chat view
-│   ├── services/                # Business logic
-│   │   ├── cursor_agent_service.dart    # API client
-│   │   ├── job_polling_service.dart     # Job status polling
-│   │   └── api_service.dart             # Low-level HTTP
-│   ├── widgets/                 # Reusable components
-│   │   ├── message_bubble.dart          # Message display
-│   │   ├── processing_indicator.dart    # Status animation
-│   │   └── ...
-│   ├── providers/               # State management
-│   │   └── theme_provider.dart
-│   └── utils/
-│       └── theme.dart          # App theming
-│
-├── rest/                        # Python backend
-│   ├── cursor_chat_api.py      # FastAPI server (main)
-│   ├── requirements_api.txt    # Python dependencies
-│   ├── start_api.sh           # Server startup script
-│   ├── conftest.py            # Test configuration
-│   ├── test_*.py              # Test suites
-│   └── README.md              # Backend documentation
-│
-├── pubspec.yaml                # Flutter dependencies
-└── README.md                   # This file
+├── apps/
+│   └── ios/                    # Flutter iOS client
+├── stream-server/              # macOS streaming server (Rust + Swift)
+│   └── [See JacobPlan.md]
+├── mcp-server/                 # MCP server for LLM agent control
+├── rest-rust/                  # REST API backend
+└── remote-agent-service/       # Remote cursor-agent execution
 ```
 
-## Configuration
+### Stream Server (macOS)
 
-### Backend Configuration
+**Technology:** Rust + Swift bridge for ScreenCaptureKit
 
-**Database Path** (macOS default):
-```python
-DB_PATH = '~/Library/Application Support/Cursor/User/globalStorage/state.vscdb'
-```
+**Responsibilities:**
+- Enumerate and capture macOS windows via ScreenCaptureKit
+- Stream video to clients via WebRTC (multi-track)
+- Receive input events and inject via CGEvent
+- Advertise service via mDNS (`_blink._tcp`)
 
-**Server Settings** in `cursor_chat_api.py`:
-- Host: `0.0.0.0` (all interfaces)
-- Port: `8000`
-- Job retention: 1 hour for completed jobs
-- Timeout: 120 seconds for cursor-agent calls
+**Key Components:**
+- WebSocket server for signaling and input
+- Swift bridge for native macOS APIs
+- Per-window video tracks
 
-### Available AI Models
+### iOS Client (Flutter)
 
-The backend supports all cursor-agent models:
-- `composer-1`, `auto` (Cursor's models)
-- `sonnet-4.5`, `sonnet-4.5-thinking` (Claude)
-- `gpt-5`, `gpt-5-codex`, `gpt-5-codex-high` (OpenAI)
-- `opus-4.1` (Claude)
-- `grok`, `grok-4` (xAI)
-- `gemini-2.5-pro`, `gemini-2.5-flash` (Google)
+**Location:** `apps/ios/`
 
-## Development
+**Responsibilities:**
+- Discover servers via mDNS/Bonjour
+- Connect and negotiate WebRTC streams
+- Display multiple window streams with tab switching
+- Translate touch gestures to mouse/keyboard events
 
-### Running Tests
+**Key Features:**
+- Frosted glass UI with 120fps animations
+- Gesture-first interaction (tap, drag, pinch, scroll)
+- Auto-hide controls when viewing
+- Haptic feedback throughout
 
-**Backend Tests:**
+## Quick Start
+
+### iOS Client
+
 ```bash
-cd rest
-pytest                           # All tests
-pytest test_cursor_agent.py      # Cursor agent integration
-pytest test_api.py              # API endpoints
-```
-
-**Frontend:**
-```bash
-flutter test
-```
-
-### Development Mode
-
-**Backend with auto-reload:**
-```bash
-cd rest
-uvicorn cursor_chat_api:app --reload --host 0.0.0.0 --port 8000
-```
-
-**Frontend with hot reload:**
-```bash
-flutter run
-# Press 'r' to hot reload, 'R' to hot restart
-```
-
-## Troubleshooting
-
-### Backend Issues
-
-**Database not found:**
-- Ensure Cursor IDE is installed
-- Check database path in `cursor_chat_api.py`
-- Verify path: `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`
-
-**cursor-agent not found:**
-```bash
-# Install cursor-agent
-curl https://cursor.com/install -fsS | bash
-
-# Verify installation
-cursor-agent --version
-
-# Check path (should be ~/.local/bin/cursor-agent)
-which cursor-agent
-```
-
-**Authentication errors:**
-```bash
-# Login to Cursor
-cursor-agent login
-```
-
-### Frontend Issues
-
-**Cannot connect to API:**
-- Verify backend is running: `curl http://localhost:8000/health`
-- Check firewall settings
-- For physical devices, ensure Mac and device are on same network
-- Update IP address in `cursor_agent_service.dart`
-
-**Build errors:**
-```bash
-flutter clean
+cd apps/ios
 flutter pub get
 flutter run
 ```
 
-## Architecture Decisions
+### Stream Server
 
-### Why Async Jobs?
+See `stream-server/README.md` (or `JacobPlan.md` for spec)
 
-Cursor-agent calls can take 5-30 seconds. Async jobs provide:
-- **Non-blocking UI** - User can navigate while waiting
-- **Better UX** - Progress indicators and elapsed time
-- **Concurrent processing** - Multiple jobs can run simultaneously
-- **Error recovery** - Jobs can be retried or cancelled
+```bash
+cd stream-server
+cargo run
+```
 
-### Why Direct Database Access?
+## API Contract
 
-Reading/writing Cursor's SQLite database directly:
-- **Instant sync** - Changes appear in Cursor IDE immediately
-- **No API dependency** - Works offline
-- **Full access** - All chat metadata and content
-- **Performance** - No network overhead for reads
+### mDNS Discovery
 
-### Why cursor-agent CLI?
+- **Service Type:** `_blink._tcp`
+- **Port:** `8080`
+- **TXT Records:** `version=1`, `name=<hostname>`
 
-- **Official tool** - Maintained by Cursor team
-- **Model routing** - Handles all AI model complexity
-- **Authentication** - Uses Cursor's existing auth
-- **History magic** - `--resume` flag handles context automatically
+### WebSocket Endpoints
+
+#### `WS /signaling` - WebRTC Signaling
+
+```json
+// Client → Server: Offer
+{"type": "offer", "sdp": "..."}
+
+// Server → Client: Answer  
+{"type": "answer", "sdp": "..."}
+
+// Both: ICE candidates
+{"type": "ice", "candidate": "..."}
+```
+
+#### `WS /windows` - Window Management
+
+```json
+// Server → Client: Window list
+{
+  "type": "window_list",
+  "windows": [
+    {"id": 12345, "title": "Cursor - project", "app": "Cursor", "bounds": {...}}
+  ]
+}
+
+// Client → Server: Subscribe
+{"type": "subscribe", "window_ids": [12345, 12346]}
+```
+
+#### `WS /input` - Input Events
+
+```json
+// Mouse
+{"type": "mouse", "window_id": 12345, "action": "click", "x": 0.5, "y": 0.3}
+
+// Keyboard
+{"type": "key", "window_id": 12345, "action": "down", "key_code": 36}
+```
+
+## iOS Client Structure
+
+```
+apps/ios/lib/
+├── main.dart
+├── theme/
+│   ├── remote_theme.dart        # Colors, typography
+│   ├── animations.dart          # Motion design
+│   └── glassmorphism.dart       # Frosted glass effects
+├── models/
+│   ├── server.dart              # Discovered server info
+│   ├── remote_window.dart       # Window metadata
+│   └── connection_state.dart    # Connection status
+├── services/
+│   ├── discovery_service.dart   # mDNS discovery
+│   ├── stream_service.dart      # WebRTC management
+│   └── input_service.dart       # Touch → input events
+├── providers/
+│   ├── connection_provider.dart
+│   ├── windows_provider.dart
+│   └── stream_provider.dart
+├── screens/
+│   ├── connection_screen.dart   # Server discovery
+│   ├── window_picker_screen.dart
+│   ├── remote_desktop_screen.dart
+│   └── grid_view_screen.dart
+└── widgets/
+    ├── connection/              # Server cards, scanning
+    ├── window/                  # Tab bar, video view
+    └── input/                   # Touch overlay, keyboard
+```
+
+## Gestures
+
+| Gesture | Action |
+|---------|--------|
+| **Tap** | Left click |
+| **Double tap** | Double click |
+| **Two-finger tap** | Right click |
+| **Long press** | Right click (hold) |
+| **Drag** | Mouse move |
+| **Pinch** | Zoom window |
+| **Two-finger scroll** | Scroll wheel |
+| **Swipe tabs** | Switch windows |
+| **Three-finger down** | Grid view |
 
 ## Requirements
 
-- **Backend:**
-  - Python 3.8+
-  - FastAPI, uvicorn, sqlite3
-  - cursor-agent CLI
-  - macOS (for default database path)
+### iOS Client
+- Flutter 3.0+
+- iOS 12+
+- Same WiFi network as Mac
 
-- **Frontend:**
-  - Flutter 3.0+
-  - Dart 3.0+
-  - iOS 12+ / Android 6+
+### Stream Server
+- macOS 12.3+ (ScreenCaptureKit)
+- Rust 1.70+
+- Screen Recording permission
 
-- **System:**
-  - Cursor IDE installed
-  - Network access between frontend and backend
+## Project Status
+
+| Component | Status |
+|-----------|--------|
+| iOS Client | 🟡 In Development |
+| Stream Server | 🔴 Not Started |
+| mDNS Discovery | ✅ Implemented |
+| WebRTC Streaming | 🟡 Scaffolded |
+| Input Injection | 🔴 Not Started |
+
+## Related Components
+
+- **`mcp-server/`** - MCP server for LLM agents to control Blink
+- **`rest-rust/`** - REST API for chat management (legacy)
+- **`remote-agent-service/`** - Remote cursor-agent execution
 
 ## License
 
 MIT
-
-## Contributing
-
-Contributions welcome! Areas for improvement:
-- Streaming support (SSE for real-time responses)
-- Message editing and deletion
-- Chat archiving/organization
-- Search functionality
-- Export conversations
-- Multi-user support
-
-## Support
-
-- **Backend API Docs:** `http://localhost:8000/docs`
-- **Backend README:** `rest/README.md`
-- **Issues:** GitHub issues for bug reports
-
----
-
-**Built with Flutter, FastAPI, and cursor-agent**
