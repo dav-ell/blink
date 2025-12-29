@@ -202,8 +202,8 @@ void main() {
   });
 }
 
-/// Extended mock input service with tracking for tests
-class _MockInputService extends MockInputService {
+/// Testable input service that tracks method calls
+class TestableInputService extends InputService {
   bool connectCalled = false;
   bool disconnectCalled = false;
   StreamServer? lastConnectedServer;
@@ -212,29 +212,13 @@ class _MockInputService extends MockInputService {
   Future<void> connect(StreamServer server) async {
     connectCalled = true;
     lastConnectedServer = server;
-    await super.connect(server);
+    // Don't call super - we don't want actual WebSocket connection in tests
   }
 
   @override
   Future<void> disconnect() async {
     disconnectCalled = true;
-    await super.disconnect();
-  }
-}
-
-/// Extended mock input service for tests
-class MockInputService {
-  bool _isConnected = false;
-  final List<Map<String, dynamic>> sentEvents = [];
-
-  bool get isConnected => _isConnected;
-
-  Future<void> connect(StreamServer server) async {
-    _isConnected = true;
-  }
-
-  Future<void> disconnect() async {
-    _isConnected = false;
+    // Don't call super - we don't want actual WebSocket disconnection in tests
   }
 }
 
