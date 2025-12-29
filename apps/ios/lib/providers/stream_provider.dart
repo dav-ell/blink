@@ -24,6 +24,12 @@ class VideoStreamProvider extends ChangeNotifier {
     return _streamService.renderers.containsKey(windowId);
   }
 
+  /// Number of video tracks received (for testing verification)
+  int get receivedTrackCount => _streamService.receivedTrackCount;
+
+  /// Whether any video tracks have been received
+  bool get hasReceivedVideo => _streamService.hasReceivedVideo;
+
   void _onStreamChanged() {
     notifyListeners();
   }

@@ -74,6 +74,7 @@ extern "C" {
     fn sck_start_capture(window_id: u32) -> i32;
     fn sck_stop_capture(window_id: u32) -> i32;
     fn sck_has_permission() -> i32;
+    fn sck_request_keyframe(window_id: u32) -> i32;
 }
 
 /// Initialize the app context for Window Server access
@@ -210,4 +211,22 @@ pub fn start_capture(_window_id: u32) -> Result<()> {
 #[cfg(not(target_os = "macos"))]
 pub fn stop_capture(_window_id: u32) -> Result<()> {
     Err(anyhow!("ScreenCaptureKit is only available on macOS"))
+}
+
+/// Request a keyframe from the encoder for a window
+#[cfg(target_os = "macos")]
+pub fn request_keyframe(window_id: u32) -> Result<()> {
+    unsafe {
+        let result = sck_request_keyframe(window_id);
+        if result != 0 {
+            return Err(anyhow!("Failed to request keyframe for window {}", window_id));
+        }
+    }
+    debug!("Requested keyframe for window {}", window_id);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn request_keyframe(_window_id: u32) -> Result<()> {
+    Ok(())
 }

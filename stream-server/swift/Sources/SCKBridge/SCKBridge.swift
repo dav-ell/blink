@@ -81,12 +81,28 @@ private final class CaptureManager {
     }
 }
 
+/// Stream delegate to handle errors
+@available(macOS 12.3, *)
+private class StreamDelegate: NSObject, SCStreamDelegate {
+    let windowId: UInt32
+    
+    init(windowId: UInt32) {
+        self.windowId = windowId
+        super.init()
+    }
+    
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        print("SCStream stopped with error for window \(windowId): \(error)")
+    }
+}
+
 /// Capture session wrapper
 @available(macOS 12.3, *)
 private class CaptureSession {
     let windowId: UInt32
     var stream: SCStream?
     var outputHandler: FrameOutputHandler?
+    var streamDelegate: StreamDelegate?
     var encoder: H264Encoder?
     let width: Int
     let height: Int
@@ -283,9 +299,17 @@ private func startCaptureImpl(windowId: UInt32) -> Int32 {
         config.width = frameWidth
         config.height = frameHeight
         config.minimumFrameInterval = CMTime(value: 1, timescale: 30) // 30 FPS for encoding
-        config.queueDepth = 3
+        config.queueDepth = 5
         config.showsCursor = true
         config.pixelFormat = kCVPixelFormatType_32BGRA
+        
+        // Capture options for better frame delivery
+        if #available(macOS 13.0, *) {
+            config.capturesAudio = false
+        }
+        
+        // Scale to fit the configured dimensions
+        config.scalesToFit = true
         
         // Create capture session with dimensions
         let session = CaptureSession(windowId: windowId, width: frameWidth, height: frameHeight)
@@ -293,8 +317,12 @@ private func startCaptureImpl(windowId: UInt32) -> Int32 {
         // Start the H264 encoder
         session.startEncoder()
         
-        // Create stream
-        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+        // Create stream delegate
+        let streamDelegate = StreamDelegate(windowId: windowId)
+        session.streamDelegate = streamDelegate
+        
+        // Create stream with delegate
+        let stream = SCStream(filter: filter, configuration: config, delegate: streamDelegate)
         
         do {
             // Add stream output - pass session reference for encoder access
@@ -368,6 +396,23 @@ private func stopCaptureImpl(windowId: UInt32) -> Int32 {
     return 0
 }
 
+/// Request a keyframe for a window's encoder
+@_cdecl("sck_request_keyframe")
+public func sck_request_keyframe(windowId: UInt32) -> Int32 {
+    guard #available(macOS 12.3, *) else {
+        return -1
+    }
+    
+    let manager = CaptureManager.shared
+    guard let session = manager.getSession(windowId) else {
+        print("sck_request_keyframe: No session for window \(windowId)")
+        return -1
+    }
+    
+    session.encoder?.requestKeyframe()
+    return 0
+}
+
 /// Check if screen recording permission is granted
 @_cdecl("sck_has_permission")
 public func sck_has_permission() -> Int32 {
@@ -394,6 +439,8 @@ private class FrameOutputHandler: NSObject, SCStreamOutput {
     let windowId: UInt32
     private weak var session: CaptureSession?
     private var frameCount: UInt64 = 0
+    private var validFrameCount: UInt64 = 0
+    private var lastLogTime: Date = Date()
     
     init(windowId: UInt32, session: CaptureSession) {
         self.windowId = windowId
@@ -406,25 +453,46 @@ private class FrameOutputHandler: NSObject, SCStreamOutput {
         
         frameCount += 1
         
-        // Get pixel buffer
+        // Check if sample buffer is valid and has data
+        guard CMSampleBufferIsValid(sampleBuffer),
+              CMSampleBufferDataIsReady(sampleBuffer) else {
+            return // Silent skip for invalid buffers
+        }
+        
+        // Get pixel buffer - may be nil for some frames (e.g., no content change)
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            print("FrameOutputHandler: No pixel buffer in sample")
+            // Only log occasionally to avoid spam
+            if frameCount <= 5 || frameCount % 100 == 0 {
+                // Check attachments for clues about why there's no pixel buffer
+                if let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[CFString: Any]] {
+                    let hasStatusFrame = attachments.first?[SCStreamFrameInfo.status as CFString] != nil
+                    if hasStatusFrame {
+                        // This is a status-only frame, not an error
+                        return
+                    }
+                }
+                print("FrameOutputHandler: No pixel buffer in frame #\(frameCount)")
+            }
             return
         }
         
-        // Log every 30 frames
-        if frameCount % 30 == 1 {
-            print("FrameOutputHandler: Captured frame #\(frameCount) for window \(windowId)")
+        validFrameCount += 1
+        
+        // Log every 30 valid frames or every 2 seconds
+        let now = Date()
+        if validFrameCount % 30 == 1 || now.timeIntervalSince(lastLogTime) >= 2.0 {
+            print("FrameOutputHandler: Captured valid frame #\(validFrameCount) (total: \(frameCount)) for window \(windowId)")
+            lastLogTime = now
         }
         
         // Get timestamp
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         
         // Encode the frame
-        if session?.encoder != nil {
-            session?.encoder?.encode(pixelBuffer: pixelBuffer, timestamp: pts)
+        if let encoder = session?.encoder {
+            encoder.encode(pixelBuffer: pixelBuffer, timestamp: pts)
         } else {
-            if frameCount == 1 {
+            if validFrameCount == 1 {
                 print("FrameOutputHandler: No encoder for window \(windowId)")
             }
         }

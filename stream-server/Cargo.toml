@@ -5,6 +5,10 @@ edition = "2021"
 authors = ["Blink Contributors"]
 description = "macOS window streaming server with WebRTC and ScreenCaptureKit"
 
+[lib]
+name = "blink_stream_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "blink-stream"
 path = "src/main.rs"
@@ -46,6 +50,9 @@ hostname = "0.4"
 
 [build-dependencies]
 cc = "1"
+
+[dev-dependencies]
+anyhow = "1"
 
 [profile.release]
 opt-level = 3

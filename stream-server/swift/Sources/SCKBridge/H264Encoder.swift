@@ -149,13 +149,21 @@ public class H264Encoder {
         
         let duration = CMTime(value: 1, timescale: 30) // Assume 30fps
         
+        // Check if we need to force a keyframe
+        var frameProperties: CFDictionary? = nil
+        if forceNextKeyframe {
+            frameProperties = [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary
+            forceNextKeyframe = false
+            print("H264Encoder: Forcing keyframe for window \(windowId)")
+        }
+        
         var flags: VTEncodeInfoFlags = []
         let status = VTCompressionSessionEncodeFrame(
             session,
             imageBuffer: pixelBuffer,
             presentationTimeStamp: timestamp,
             duration: duration,
-            frameProperties: nil,
+            frameProperties: frameProperties,
             sourceFrameRefcon: nil,
             infoFlagsOut: &flags
         )
@@ -174,9 +182,18 @@ public class H264Encoder {
     
     /// Request a keyframe on the next encode
     public func requestKeyframe() {
-        // Will be applied on next encode call
-        // For now, we rely on the keyframe interval
+        guard let session = compressionSession else { return }
+        
+        let properties: [CFString: Any] = [
+            kVTEncodeFrameOptionKey_ForceKeyFrame: true
+        ]
+        
+        // This will be applied on the next encode call
+        print("H264Encoder: Keyframe requested for window \(windowId)")
+        forceNextKeyframe = true
     }
+    
+    private var forceNextKeyframe = true  // Force keyframe on first frame
     
     /// Handle encoded frame output
     private func handleEncodedFrame(status: OSStatus, sampleBuffer: CMSampleBuffer?) {

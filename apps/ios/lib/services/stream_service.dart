@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -20,12 +21,21 @@ class StreamService extends ChangeNotifier {
   
   StreamSubscription? _signalingSubscription;
   StreamSubscription? _windowsSubscription;
+  
+  /// Track count for testing - increments when video tracks are received
+  int _receivedTrackCount = 0;
 
   /// Current connection state
   StreamConnectionState get state => _state;
 
   /// Video renderers for each window (keyed by window ID)
   Map<String, RTCVideoRenderer> get renderers => Map.unmodifiable(_renderers);
+
+  /// Number of video tracks received (for testing verification)
+  int get receivedTrackCount => _receivedTrackCount;
+  
+  /// Whether any video tracks have been received
+  bool get hasReceivedVideo => _receivedTrackCount > 0;
 
   /// Connect to a stream server
   Future<void> connect(StreamServer server) async {
@@ -93,6 +103,7 @@ class StreamService extends ChangeNotifier {
     _renderers.clear();
     _streams.clear();
     _server = null;
+    _receivedTrackCount = 0;
 
     _updateState(StreamConnectionState.initial);
   }
@@ -190,10 +201,38 @@ class StreamService extends ChangeNotifier {
     _signalingChannel?.sink.add(jsonEncode(message));
   }
 
+  // #region agent log
+  void _debugLog(String hypothesisId, String location, String message, Map<String, dynamic> data) {
+    final payload = {
+      'hypothesisId': hypothesisId,
+      'location': location,
+      'message': message,
+      'data': data,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'sessionId': 'debug-session',
+    };
+    // Fire and forget - use unawaited async to avoid catchError type issues
+    () async {
+      try {
+        final uri = Uri.parse('http://192.168.1.113:7258/ingest/606a0860-3796-4c1f-8a76-f60d9d7088f7');
+        final client = HttpClient();
+        final req = await client.postUrl(uri);
+        req.headers.contentType = ContentType.json;
+        req.write(jsonEncode(payload));
+        await req.close();
+      } catch (_) {}
+    }();
+  }
+  // #endregion
+
   void _handleSignalingMessage(dynamic data) async {
     try {
       final message = jsonDecode(data as String) as Map<String, dynamic>;
       final type = message['type'] as String?;
+      
+      // #region agent log
+      debugPrint('[DEBUG] Signaling message received: type=$type');
+      // #endregion
 
       switch (type) {
         case 'answer':
@@ -201,7 +240,46 @@ class StreamService extends ChangeNotifier {
             message['sdp'] as String,
             'answer',
           );
+          // #region agent log
+          _debugLog('C', 'stream_service:answer', 'Setting remote description (answer SDP)', {
+            'sdp_length': answer.sdp?.length ?? 0,
+            'has_video': answer.sdp?.contains('m=video') ?? false,
+          });
+          // #endregion
           await _peerConnection?.setRemoteDescription(answer);
+          break;
+
+        case 'offer':
+          // Server-initiated renegotiation (new tracks added)
+          debugPrint('[DEBUG] Received OFFER from server for renegotiation');
+          final offer = RTCSessionDescription(
+            message['sdp'] as String,
+            'offer',
+          );
+          // #region agent log
+          debugPrint('[DEBUG] Offer SDP length: ${offer.sdp?.length}, has_video: ${offer.sdp?.contains('m=video')}');
+          _debugLog('FIX', 'stream_service:offer', 'Received renegotiation offer from server', {
+            'sdp_length': offer.sdp?.length ?? 0,
+            'has_video': offer.sdp?.contains('m=video') ?? false,
+          });
+          // #endregion
+          
+          await _peerConnection?.setRemoteDescription(offer);
+          debugPrint('[DEBUG] Set remote description with offer');
+          final answer = await _peerConnection?.createAnswer();
+          if (answer != null) {
+            await _peerConnection?.setLocalDescription(answer);
+            _sendSignaling({
+              'type': 'answer',
+              'sdp': answer.sdp,
+            });
+            debugPrint('[DEBUG] Sent renegotiation answer back to server');
+            // #region agent log
+            _debugLog('FIX', 'stream_service:offer', 'Sent renegotiation answer to server', {
+              'sdp_length': answer.sdp?.length ?? 0,
+            });
+            // #endregion
+          }
           break;
 
         case 'ice':
@@ -227,6 +305,10 @@ class StreamService extends ChangeNotifier {
     try {
       final message = jsonDecode(data as String) as Map<String, dynamic>;
       final type = message['type'] as String?;
+      
+      // #region agent log
+      debugPrint('[DEBUG] Windows channel message: type=$type');
+      // #endregion
 
       switch (type) {
         case 'window_list':
@@ -247,6 +329,14 @@ class StreamService extends ChangeNotifier {
           final renderer = _renderers.remove(windowId.toString());
           renderer?.dispose();
           break;
+          
+        // Handle signaling messages that may come on windows channel (renegotiation)
+        case 'offer':
+        case 'answer':
+        case 'ice':
+          debugPrint('[DEBUG] Forwarding signaling message from windows channel: $type');
+          _handleSignalingMessage(data);
+          break;
       }
     } catch (e) {
       debugPrint('Error handling windows message: $e');
@@ -254,15 +344,50 @@ class StreamService extends ChangeNotifier {
   }
 
   void _handleTrack(RTCTrackEvent event) async {
+    // #region agent log
+    debugPrint('[DEBUG] onTrack fired! kind=${event.track.kind}, id=${event.track.id}, streams=${event.streams.length}');
+    _debugLog('D', 'stream_service:onTrack', 'onTrack callback fired', {
+      'track_kind': event.track.kind,
+      'track_id': event.track.id,
+      'streams_count': event.streams.length,
+      'has_transceiver': event.transceiver != null,
+      'mid': event.transceiver?.mid,
+    });
+    // #endregion
+
     if (event.track.kind != 'video') return;
 
     final stream = event.streams.isNotEmpty ? event.streams[0] : null;
-    if (stream == null) return;
+    if (stream == null) {
+      // #region agent log
+      _debugLog('D', 'stream_service:onTrack', 'No stream in track event', {
+        'track_id': event.track.id,
+      });
+      // #endregion
+      return;
+    }
 
-    // Extract window ID from track mid or use stream ID
-    final windowId = event.transceiver?.mid ?? stream.id;
+    // Extract window ID from track ID (format: "window-{id}") or fall back to mid/stream.id
+    String windowId;
+    final trackId = event.track.id ?? '';
+    if (trackId.startsWith('window-')) {
+      windowId = trackId.substring(7); // Remove "window-" prefix
+    } else {
+      windowId = event.transceiver?.mid ?? stream.id;
+    }
     
-    debugPrint('Received video track for window: $windowId');
+    debugPrint('[DEBUG] Extracted windowId: $windowId from trackId: $trackId');
+
+    // Increment track count for testing
+    _receivedTrackCount++;
+
+    // #region agent log
+    _debugLog('D', 'stream_service:onTrack', 'Creating renderer for video track', {
+      'window_id': windowId,
+      'stream_id': stream.id,
+      'track_count': _receivedTrackCount,
+    });
+    // #endregion
 
     // Create renderer for this track
     final renderer = RTCVideoRenderer();

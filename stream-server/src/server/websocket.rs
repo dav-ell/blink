@@ -31,8 +31,10 @@ pub struct IceCandidate {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IncomingMessage {
-    /// WebRTC offer from client
+    /// WebRTC offer from client (initial connection)
     Offer { sdp: String },
+    /// WebRTC answer from client (response to server's renegotiation offer)
+    Answer { sdp: String },
     /// ICE candidate from client
     Ice { candidate: IceCandidate },
     /// Subscribe to window streams
@@ -49,8 +51,10 @@ pub enum IncomingMessage {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OutgoingMessage {
-    /// WebRTC answer to client
+    /// WebRTC answer to client (response to client's offer)
     Answer { sdp: String },
+    /// WebRTC offer to client (renegotiation - server initiated)
+    Offer { sdp: String },
     /// ICE candidate to client
     Ice { candidate: IceCandidate },
     /// List of available windows
@@ -145,6 +149,11 @@ where
                 .map_err(|e| anyhow!("Send error: {}", e))?;
         }
 
+        IncomingMessage::Answer { sdp } => {
+            info!("Received renegotiation answer from client");
+            state.webrtc_manager.write().await.handle_renegotiation_answer(&sdp).await?;
+        }
+
         IncomingMessage::Ice { candidate } => {
             debug!("Received ICE candidate: {:?}", candidate);
             state.webrtc_manager.write().await.add_ice_candidate(candidate).await?;
@@ -152,9 +161,27 @@ where
 
         IncomingMessage::Subscribe { window_ids } => {
             info!("Subscribe request for windows: {:?}", window_ids);
+            let mut renegotiated_windows = Vec::new();
+            
             for window_id in window_ids {
                 state.capture_manager.start_capture(window_id)?;
-                state.webrtc_manager.write().await.add_window_track(window_id).await?;
+                // Add track and get renegotiation offer if needed
+                if let Some(offer_sdp) = state.webrtc_manager.write().await.add_window_track(window_id).await? {
+                    // Send renegotiation offer to client
+                    let response = OutgoingMessage::Offer { sdp: offer_sdp };
+                    let json = serde_json::to_string(&response)?;
+                    write
+                        .send(Message::Text(json))
+                        .await
+                        .map_err(|e| anyhow!("Send error: {}", e))?;
+                    info!("Sent renegotiation offer to client for window {}", window_id);
+                    renegotiated_windows.push(window_id);
+                    
+                    // Request a keyframe so client gets fresh decoder state after renegotiation
+                    if let Err(e) = crate::capture::request_keyframe(window_id) {
+                        debug!("Could not request keyframe for {}: {}", window_id, e);
+                    }
+                }
             }
         }
 
