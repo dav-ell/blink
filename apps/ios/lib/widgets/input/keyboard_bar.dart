@@ -1,0 +1,198 @@
+import 'dart:ui';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../../theme/remote_theme.dart';
+import '../../services/input_service.dart';
+import '../../utils/haptics.dart';
+
+/// Floating keyboard trigger and input bar
+class KeyboardBar extends StatefulWidget {
+  final InputService inputService;
+  final int windowId;
+
+  const KeyboardBar({
+    super.key,
+    required this.inputService,
+    required this.windowId,
+  });
+
+  @override
+  State<KeyboardBar> createState() => _KeyboardBarState();
+}
+
+class _KeyboardBarState extends State<KeyboardBar> {
+  final TextEditingController _textController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  bool _isExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    setState(() {
+      _isExpanded = _focusNode.hasFocus;
+    });
+  }
+
+  void _toggleKeyboard() {
+    Haptics.tap();
+    if (_focusNode.hasFocus) {
+      _focusNode.unfocus();
+    } else {
+      _focusNode.requestFocus();
+    }
+  }
+
+  void _onTextChanged(String text) {
+    if (text.isNotEmpty) {
+      // Send the last character typed
+      final lastChar = text.characters.last;
+      widget.inputService.sendTextInput(
+        windowId: widget.windowId,
+        text: lastChar,
+      );
+      // Clear the controller to be ready for next input
+      _textController.clear();
+    }
+  }
+
+  void _sendSpecialKey(int keyCode, {List<KeyModifier> modifiers = const []}) {
+    Haptics.tap();
+    widget.inputService.sendKeyPress(
+      windowId: widget.windowId,
+      keyCode: keyCode,
+      modifiers: modifiers,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: RemoteTheme.durationNormal,
+      curve: RemoteTheme.curveDefault,
+      width: _isExpanded ? 280 : 48,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(RemoteTheme.radiusFull),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: RemoteTheme.glassWhite,
+              borderRadius: BorderRadius.circular(RemoteTheme.radiusFull),
+              border: Border.all(
+                color: _isExpanded
+                    ? RemoteTheme.accent.withOpacity(0.5)
+                    : RemoteTheme.glassBorder,
+                width: 1,
+              ),
+            ),
+            child: _isExpanded ? _buildExpandedBar() : _buildCollapsedButton(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollapsedButton() {
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: _toggleKeyboard,
+      child: const Icon(
+        CupertinoIcons.keyboard,
+        size: 22,
+        color: RemoteTheme.textSecondary,
+      ),
+    );
+  }
+
+  Widget _buildExpandedBar() {
+    return Row(
+      children: [
+        // Close button
+        CupertinoButton(
+          padding: const EdgeInsets.symmetric(horizontal: RemoteTheme.spacingSM),
+          onPressed: _toggleKeyboard,
+          child: const Icon(
+            CupertinoIcons.xmark,
+            size: 18,
+            color: RemoteTheme.textSecondary,
+          ),
+        ),
+        
+        // Text input (hidden, just to capture keyboard)
+        Expanded(
+          child: CupertinoTextField(
+            controller: _textController,
+            focusNode: _focusNode,
+            placeholder: 'Type here...',
+            placeholderStyle: RemoteTheme.bodySmall.copyWith(
+              color: RemoteTheme.textTertiary,
+            ),
+            style: RemoteTheme.bodySmall,
+            decoration: const BoxDecoration(),
+            padding: const EdgeInsets.symmetric(horizontal: RemoteTheme.spacingSM),
+            onChanged: _onTextChanged,
+            autocorrect: false,
+            enableSuggestions: false,
+          ),
+        ),
+        
+        // Special keys
+        _SpecialKeyButton(
+          label: '⌘',
+          onPressed: () => _sendSpecialKey(55), // Command key
+        ),
+        _SpecialKeyButton(
+          label: '↵',
+          onPressed: () => _sendSpecialKey(36), // Return key
+        ),
+        _SpecialKeyButton(
+          label: 'esc',
+          onPressed: () => _sendSpecialKey(53), // Escape key
+        ),
+        
+        const SizedBox(width: RemoteTheme.spacingXS),
+      ],
+    );
+  }
+}
+
+class _SpecialKeyButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+
+  const _SpecialKeyButton({
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoButton(
+      padding: const EdgeInsets.symmetric(horizontal: RemoteTheme.spacingSM),
+      minSize: 32,
+      onPressed: onPressed,
+      child: Text(
+        label,
+        style: RemoteTheme.caption.copyWith(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+

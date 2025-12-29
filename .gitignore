@@ -255,11 +255,7 @@ google-services.json
 SETUP.md
 README.md
 
-# Platform-specific generated files
-android/
-ios/
-macos/
-.metadata
+/.metadata
 
 # IDE
 .idea/
