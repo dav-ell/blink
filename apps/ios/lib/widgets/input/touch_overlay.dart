@@ -271,24 +271,30 @@ class _TouchOverlayState extends State<TouchOverlay> {
         'previousScale': _previousScale,
         'newScale': newScale,
         'currentScale': _scale,
-        'scaleDiff': (newScale - _scale).abs(),
-        'willUpdate': (newScale - _scale).abs() > 0.01,
+        'focalPoint': {'dx': details.localFocalPoint.dx, 'dy': details.localFocalPoint.dy},
+        'initialFocalPoint': {'dx': _focalPoint.dx, 'dy': _focalPoint.dy},
       }, 'B');
       // #endregion
       
-      if ((newScale - _scale).abs() > 0.01) {
+      if ((newScale - _scale).abs() > 0.01 || details.localFocalPoint != _dragStartPosition) {
         setState(() {
-          // Calculate focal point relative offset
-          final focalOffset = _focalPoint - _offset;
-          
-          // Update scale
+          final oldScale = _scale;
           _scale = newScale;
           
-          // Adjust offset to keep focal point stable
           if (_scale > 1.0) {
-            final scaleDiff = _scale / _previousScale;
-            _offset = _focalPoint - (focalOffset * scaleDiff);
+            // Calculate offset to keep the focal point stable during zoom
+            // The focal point should stay at the same screen position
+            // Formula: newOffset = focalPoint - (focalPoint - oldOffset) * (newScale / oldScale)
+            final scaleRatio = _scale / oldScale;
+            final focalPointInContent = _focalPoint - _previousOffset;
+            _offset = _focalPoint - (focalPointInContent * scaleRatio);
+            
+            // Also apply pan movement if fingers moved
+            final panDelta = details.localFocalPoint - _dragStartPosition!;
+            _offset = _offset + panDelta;
+            
             _clampOffset(size);
+            _dragStartPosition = details.localFocalPoint;
           } else {
             _offset = Offset.zero;
           }
@@ -302,17 +308,6 @@ class _TouchOverlayState extends State<TouchOverlay> {
         // #endregion
         
         _sendViewportUpdate();
-      }
-      
-      // Also handle two-finger pan while zooming
-      if (_scale > 1.0 && _dragStartPosition != null) {
-        final delta = details.localFocalPoint - _dragStartPosition!;
-        if (delta.distance > 2) {
-          setState(() {
-            _offset = _previousOffset + delta;
-            _clampOffset(size);
-          });
-        }
       }
     }
   }
@@ -421,11 +416,13 @@ class _TouchOverlayState extends State<TouchOverlay> {
       child: Stack(
         children: [
           // Apply zoom transformation to child
+          // Use alignment-based scaling for correct focal point behavior
           ClipRect(
             child: Transform(
+              alignment: Alignment.topLeft,
               transform: Matrix4.identity()
-                ..translate(_offset.dx, _offset.dy)
-                ..scale(_scale),
+                ..scale(_scale)
+                ..translate(_offset.dx / _scale, _offset.dy / _scale),
               child: widget.child,
             ),
           ),

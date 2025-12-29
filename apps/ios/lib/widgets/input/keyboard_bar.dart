@@ -75,17 +75,49 @@ class _KeyboardBarState extends State<KeyboardBar> {
     // #endregion
     
     Haptics.tap();
-    if (_focusNode.hasFocus) {
+    if (_isExpanded) {
+      // Already expanded, close it
       _focusNode.unfocus();
     } else {
-      _focusNode.requestFocus();
+      // Not expanded - first expand the bar, then request focus after rebuild
+      setState(() {
+        _isExpanded = true;
+      });
+      // Request focus in next frame after TextField is built
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _focusNode.requestFocus();
+        // #region agent log
+        _debugLogKeyboard('keyboard_bar.dart:_toggleKeyboard:postFrame', 'Focus requested after rebuild', {
+          'hasFocus': _focusNode.hasFocus,
+          'isExpanded': _isExpanded,
+        }, 'F');
+        // #endregion
+      });
     }
   }
 
   void _onTextChanged(String text) {
+    // #region agent log
+    _debugLogKeyboard('keyboard_bar.dart:_onTextChanged', 'Text changed callback', {
+      'text': text,
+      'textLength': text.length,
+      'isEmpty': text.isEmpty,
+      'windowId': widget.windowId,
+      'inputServiceConnected': widget.inputService.isConnected,
+    }, 'E');
+    // #endregion
+    
     if (text.isNotEmpty) {
       // Send the last character typed
       final lastChar = text.characters.last;
+      
+      // #region agent log
+      _debugLogKeyboard('keyboard_bar.dart:_onTextChanged:sending', 'Sending text input', {
+        'lastChar': lastChar,
+        'windowId': widget.windowId,
+      }, 'D');
+      // #endregion
+      
       widget.inputService.sendTextInput(
         windowId: widget.windowId,
         text: lastChar,
@@ -96,6 +128,15 @@ class _KeyboardBarState extends State<KeyboardBar> {
   }
 
   void _sendSpecialKey(int keyCode, {List<KeyModifier> modifiers = const []}) {
+    // #region agent log
+    _debugLogKeyboard('keyboard_bar.dart:_sendSpecialKey', 'Special key pressed', {
+      'keyCode': keyCode,
+      'modifiers': modifiers.map((m) => m.name).toList(),
+      'windowId': widget.windowId,
+      'inputServiceConnected': widget.inputService.isConnected,
+    }, 'D');
+    // #endregion
+    
     Haptics.tap();
     widget.inputService.sendKeyPress(
       windowId: widget.windowId,

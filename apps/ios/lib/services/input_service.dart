@@ -1,7 +1,25 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/server.dart';
+
+// #region agent log
+void _debugLogInput(String location, String message, Map<String, dynamic> data, String hypothesisId) {
+  try {
+    final logEntry = jsonEncode({
+      'location': location,
+      'message': message,
+      'data': data,
+      'hypothesisId': hypothesisId,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'sessionId': 'debug-session',
+    });
+    File('/Users/davell/Documents/github/blink/.cursor/debug.log')
+        .writeAsStringSync('$logEntry\n', mode: FileMode.append, flush: true);
+  } catch (_) {}
+}
+// #endregion
 
 /// Service for sending input events to the stream server
 class InputService extends ChangeNotifier {
@@ -224,14 +242,41 @@ class InputService extends ChangeNotifier {
   }
 
   void _sendEvent(Map<String, dynamic> event) {
+    // #region agent log
+    _debugLogInput('input_service.dart:_sendEvent', 'Sending event', {
+      'eventType': event['type'],
+      'channelNull': _channel == null,
+      'isConnected': _isConnected,
+      'event': event,
+    }, 'D');
+    // #endregion
+    
     if (_channel == null || !_isConnected) {
+      // #region agent log
+      _debugLogInput('input_service.dart:_sendEvent:blocked', 'Event blocked - not connected', {
+        'channelNull': _channel == null,
+        'isConnected': _isConnected,
+        'eventType': event['type'],
+      }, 'D');
+      // #endregion
       debugPrint('Cannot send event: not connected');
       return;
     }
 
     try {
       _channel!.sink.add(jsonEncode(event));
+      // #region agent log
+      _debugLogInput('input_service.dart:_sendEvent:sent', 'Event sent successfully', {
+        'eventType': event['type'],
+      }, 'D');
+      // #endregion
     } catch (e) {
+      // #region agent log
+      _debugLogInput('input_service.dart:_sendEvent:error', 'Failed to send event', {
+        'error': e.toString(),
+        'eventType': event['type'],
+      }, 'D');
+      // #endregion
       debugPrint('Failed to send event: $e');
     }
   }
