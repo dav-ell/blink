@@ -1,10 +1,29 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../theme/remote_theme.dart';
 import '../../services/input_service.dart';
 import '../../services/stream_service.dart';
 import '../../utils/haptics.dart';
+
+// #region agent log
+void _debugLog(String location, String message, Map<String, dynamic> data, String hypothesisId) {
+  try {
+    final logEntry = jsonEncode({
+      'location': location,
+      'message': message,
+      'data': data,
+      'hypothesisId': hypothesisId,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'sessionId': 'debug-session',
+    });
+    File('/Users/davell/Documents/github/blink/.cursor/debug.log')
+        .writeAsStringSync('$logEntry\n', mode: FileMode.append, flush: true);
+  } catch (_) {}
+}
+// #endregion
 
 /// Transparent overlay that captures touch gestures and translates them to input events
 class TouchOverlay extends StatefulWidget {
@@ -179,6 +198,14 @@ class _TouchOverlayState extends State<TouchOverlay> {
   }
 
   void _handleScaleStart(ScaleStartDetails details) {
+    // #region agent log
+    _debugLog('touch_overlay.dart:_handleScaleStart', 'Scale gesture started', {
+      'pointerCount': details.pointerCount,
+      'localFocalPoint': {'dx': details.localFocalPoint.dx, 'dy': details.localFocalPoint.dy},
+      'currentScale': _scale,
+    }, 'A');
+    // #endregion
+    
     _dragStartPosition = details.localFocalPoint;
     _focalPoint = details.localFocalPoint;
     _previousScale = _scale;
@@ -200,6 +227,16 @@ class _TouchOverlayState extends State<TouchOverlay> {
   }
 
   void _handleScaleUpdate(ScaleUpdateDetails details) {
+    // #region agent log
+    _debugLog('touch_overlay.dart:_handleScaleUpdate', 'Scale gesture update', {
+      'pointerCount': details.pointerCount,
+      'scale': details.scale,
+      'previousScale': _previousScale,
+      'currentScale': _scale,
+      'isDragging': _isDragging,
+    }, 'B');
+    // #endregion
+    
     final size = context.size ?? const Size(1, 1);
     final normalized = _normalizePosition(details.localFocalPoint, size);
     
@@ -228,6 +265,17 @@ class _TouchOverlayState extends State<TouchOverlay> {
       // Pinch zoom - actual zoom with viewport update
       final newScale = (_previousScale * details.scale).clamp(1.0, 4.0);
       
+      // #region agent log
+      _debugLog('touch_overlay.dart:_handleScaleUpdate:pinch', 'Pinch zoom detected', {
+        'detailsScale': details.scale,
+        'previousScale': _previousScale,
+        'newScale': newScale,
+        'currentScale': _scale,
+        'scaleDiff': (newScale - _scale).abs(),
+        'willUpdate': (newScale - _scale).abs() > 0.01,
+      }, 'B');
+      // #endregion
+      
       if ((newScale - _scale).abs() > 0.01) {
         setState(() {
           // Calculate focal point relative offset
@@ -245,6 +293,13 @@ class _TouchOverlayState extends State<TouchOverlay> {
             _offset = Offset.zero;
           }
         });
+        
+        // #region agent log
+        _debugLog('touch_overlay.dart:_handleScaleUpdate:afterSetState', 'Scale updated', {
+          'newScale': _scale,
+          'offset': {'dx': _offset.dx, 'dy': _offset.dy},
+        }, 'C');
+        // #endregion
         
         _sendViewportUpdate();
       }

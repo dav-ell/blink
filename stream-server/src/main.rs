@@ -13,27 +13,6 @@ use blink_stream_server::config::Config;
 use blink_stream_server::server::{mdns, Server};
 use blink_stream_server::video::VideoPipeline;
 
-// #region agent log
-fn debug_log(hypothesis: &str, location: &str, message: &str, data: &str) {
-    use std::io::Write;
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let log_line = format!(
-        "{{\"hypothesisId\":\"{}\",\"location\":\"{}\",\"message\":\"{}\",\"data\":{},\"timestamp\":{},\"sessionId\":\"debug-session\"}}\n",
-        hypothesis, location, message, data, ts
-    );
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/Users/davell/Documents/github/blink/.cursor/debug.log") 
-    {
-        let _ = f.write_all(log_line.as_bytes());
-    }
-}
-// #endregion
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
@@ -51,15 +30,7 @@ async fn main() -> Result<()> {
     info!("ScreenCaptureKit bridge initialized");
 
     // Initialize GStreamer for video processing
-    // #region agent log
-    let gst_start = std::time::Instant::now();
-    // #endregion
     VideoPipeline::init()?;
-    // #region agent log
-    let gst_elapsed = gst_start.elapsed();
-    debug_log("A", "main.rs:gst_init", "GStreamer init completed", 
-        &format!("{{\"elapsed_ms\":{}}}", gst_elapsed.as_millis()));
-    // #endregion
     info!("GStreamer initialized for video scaling");
 
     // Load configuration - check for BLINK_PORT env var or CLI arg

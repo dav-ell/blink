@@ -51,25 +51,10 @@ impl H264RtpPacketizer {
         let nal_units = parse_annex_b(annex_b_data);
         
         if nal_units.is_empty() {
-            // #region agent log
-            Self::debug_log("B", "tracks.rs:packetize", "No NAL units parsed from data", 
-                &format!("{{\"data_len\":{}}}", annex_b_data.len()));
-            // #endregion
             return Ok(());
         }
         
         let total_nals = nal_units.len();
-        
-        // #region agent log
-        // Log NAL unit info for first few frames
-        let seq = self.sequence_number.load(std::sync::atomic::Ordering::SeqCst);
-        if seq < 100 || seq % 300 == 0 {
-            let nal_types: Vec<u8> = nal_units.iter().map(|n| n.get(0).map(|b| b & 0x1F).unwrap_or(0)).collect();
-            Self::debug_log("B", "tracks.rs:packetize", "Sending NAL units", 
-                &format!("{{\"nal_count\":{},\"nal_types\":{:?},\"timestamp\":{},\"seq_start\":{}}}", 
-                    total_nals, nal_types, timestamp, seq));
-        }
-        // #endregion
         
         for (idx, nal) in nal_units.iter().enumerate() {
             let is_last_nal = idx == total_nals - 1;
@@ -79,27 +64,6 @@ impl H264RtpPacketizer {
         trace!("Sent {} NAL units, timestamp={}", total_nals, timestamp);
         Ok(())
     }
-    
-    // #region agent log
-    fn debug_log(hypothesis: &str, location: &str, message: &str, data: &str) {
-        use std::io::Write;
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let log_line = format!(
-            "{{\"hypothesisId\":\"{}\",\"location\":\"{}\",\"message\":\"{}\",\"data\":{},\"timestamp\":{},\"sessionId\":\"debug-session\"}}\n",
-            hypothesis, location, message, data, ts
-        );
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/Users/davell/Documents/github/blink/.cursor/debug.log") 
-        {
-            let _ = f.write_all(log_line.as_bytes());
-        }
-    }
-    // #endregion
     
     /// Send a single NAL unit, fragmenting if necessary
     async fn send_nal_unit(

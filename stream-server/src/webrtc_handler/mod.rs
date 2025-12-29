@@ -84,14 +84,6 @@ impl WebRtcManager {
         // Create answer
         let answer = peer_connection.create_answer(None).await?;
 
-        // #region agent log
-        // Check if video is in the answer SDP
-        let has_video = answer.sdp.contains("m=video");
-        let track_count = self.window_tracks.len();
-        Self::debug_log("C", "mod.rs:handle_offer", "Answer SDP created", 
-            &format!("{{\"has_video\":{},\"track_count\":{},\"sdp_len\":{}}}", has_video, track_count, answer.sdp.len()));
-        // #endregion
-
         // Set local description
         peer_connection.set_local_description(answer.clone()).await?;
 
@@ -136,11 +128,6 @@ impl WebRtcManager {
             return Ok(None);
         }
 
-        // #region agent log
-        Self::debug_log("A,C", "mod.rs:add_window_track", "Adding track AFTER connection established", 
-            &format!("{{\"window_id\":{},\"peer_state\":\"{:?}\"}}", window_id, peer_connection.connection_state()));
-        // #endregion
-
         // Create video track
         let track = Arc::new(TrackLocalStaticRTP::new(
             RTCRtpCodecCapability {
@@ -160,23 +147,12 @@ impl WebRtcManager {
             .await?;
 
         self.window_tracks.insert(window_id, track);
-        
-        // #region agent log
-        Self::debug_log("A,C", "mod.rs:add_window_track", "Track added to peer connection", 
-            &format!("{{\"window_id\":{},\"track_count\":{}}}", window_id, self.window_tracks.len()));
-        // #endregion
 
         info!("Added video track for window {}", window_id);
 
         // Create renegotiation offer to inform client about the new track
         let offer = peer_connection.create_offer(None).await?;
         peer_connection.set_local_description(offer.clone()).await?;
-        
-        // #region agent log
-        Self::debug_log("FIX", "mod.rs:add_window_track", "Created renegotiation offer", 
-            &format!("{{\"window_id\":{},\"sdp_len\":{},\"has_video\":{}}}", 
-                window_id, offer.sdp.len(), offer.sdp.contains("m=video")));
-        // #endregion
         
         info!("Created renegotiation offer for new track");
         Ok(Some(offer.sdp))
@@ -192,35 +168,9 @@ impl WebRtcManager {
         let answer = RTCSessionDescription::answer(sdp.to_string())?;
         peer_connection.set_remote_description(answer).await?;
         
-        // #region agent log
-        Self::debug_log("FIX", "mod.rs:handle_renegotiation_answer", "Set renegotiation answer", 
-            &format!("{{\"sdp_len\":{}}}", sdp.len()));
-        // #endregion
-        
         info!("Renegotiation complete");
         Ok(())
     }
-    
-    // #region agent log
-    fn debug_log(hypothesis: &str, location: &str, message: &str, data: &str) {
-        use std::io::Write;
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let log_line = format!(
-            "{{\"hypothesisId\":\"{}\",\"location\":\"{}\",\"message\":\"{}\",\"data\":{},\"timestamp\":{},\"sessionId\":\"debug-session\"}}\n",
-            hypothesis, location, message, data, ts
-        );
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/Users/davell/Documents/github/blink/.cursor/debug.log") 
-        {
-            let _ = f.write_all(log_line.as_bytes());
-        }
-    }
-    // #endregion
 
     /// Remove a video track for a window
     pub async fn remove_window_track(&mut self, window_id: u32) -> Result<()> {

@@ -1,10 +1,29 @@
 import 'dart:ui';
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../theme/remote_theme.dart';
 import '../../services/input_service.dart';
 import '../../utils/haptics.dart';
+
+// #region agent log
+void _debugLogKeyboard(String location, String message, Map<String, dynamic> data, String hypothesisId) {
+  try {
+    final logEntry = jsonEncode({
+      'location': location,
+      'message': message,
+      'data': data,
+      'hypothesisId': hypothesisId,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'sessionId': 'debug-session',
+    });
+    File('/Users/davell/Documents/github/blink/.cursor/debug.log')
+        .writeAsStringSync('$logEntry\n', mode: FileMode.append, flush: true);
+  } catch (_) {}
+}
+// #endregion
 
 /// Floating keyboard trigger and input bar
 class KeyboardBar extends StatefulWidget {
@@ -47,6 +66,14 @@ class _KeyboardBarState extends State<KeyboardBar> {
   }
 
   void _toggleKeyboard() {
+    // #region agent log
+    _debugLogKeyboard('keyboard_bar.dart:_toggleKeyboard', 'Toggle keyboard called', {
+      'hasFocus': _focusNode.hasFocus,
+      'isExpanded': _isExpanded,
+      'windowId': widget.windowId,
+    }, 'E');
+    // #endregion
+    
     Haptics.tap();
     if (_focusNode.hasFocus) {
       _focusNode.unfocus();
