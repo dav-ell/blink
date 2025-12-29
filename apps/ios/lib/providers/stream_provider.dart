@@ -11,6 +11,9 @@ class VideoStreamProvider extends ChangeNotifier {
     _streamService.addListener(_onStreamChanged);
   }
 
+  /// Get the underlying stream service (for viewport updates, etc.)
+  StreamService get streamService => _streamService;
+
   /// Get all video renderers
   Map<String, RTCVideoRenderer> get renderers => _streamService.renderers;
 

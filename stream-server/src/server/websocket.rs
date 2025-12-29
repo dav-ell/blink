@@ -13,6 +13,27 @@ use super::ServerState;
 use crate::capture::WindowInfo;
 use crate::input::{KeyEvent, MouseEvent};
 
+// #region agent log
+fn debug_log(hypothesis: &str, location: &str, message: &str, data: &str) {
+    use std::io::Write;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let log_line = format!(
+        "{{\"hypothesisId\":\"{}\",\"location\":\"{}\",\"message\":\"{}\",\"data\":{},\"timestamp\":{},\"sessionId\":\"debug-session\"}}\n",
+        hypothesis, location, message, data, ts
+    );
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/Users/davell/Documents/github/blink/.cursor/debug.log") 
+    {
+        let _ = f.write_all(log_line.as_bytes());
+    }
+}
+// #endregion
+
 /// ICE candidate with full WebRTC fields
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,6 +60,18 @@ pub enum IncomingMessage {
     Ice { candidate: IceCandidate },
     /// Subscribe to window streams
     Subscribe { window_ids: Vec<u32> },
+    /// Update viewport for a window (crop region for zoom)
+    Viewport {
+        window_id: u32,
+        /// Left edge (0.0 = left, 1.0 = right)
+        x: f32,
+        /// Top edge (0.0 = top, 1.0 = bottom)
+        y: f32,
+        /// Width as fraction of source (1.0 = full width)
+        width: f32,
+        /// Height as fraction of source (1.0 = full height)
+        height: f32,
+    },
     /// Mouse input event
     Mouse(MouseEvent),
     /// Keyboard input event
@@ -161,10 +194,23 @@ where
 
         IncomingMessage::Subscribe { window_ids } => {
             info!("Subscribe request for windows: {:?}", window_ids);
+            // #region agent log
+            let subscribe_start = std::time::Instant::now();
+            debug_log("B", "websocket:subscribe", "Subscribe request received", 
+                &format!("{{\"window_ids\":{:?}}}", window_ids));
+            // #endregion
             let mut renegotiated_windows = Vec::new();
             
             for window_id in window_ids {
+                // #region agent log
+                let capture_start = std::time::Instant::now();
+                // #endregion
                 state.capture_manager.start_capture(window_id)?;
+                // #region agent log
+                debug_log("D", "websocket:subscribe", "Capture started", 
+                    &format!("{{\"window_id\":{},\"elapsed_ms\":{}}}", window_id, capture_start.elapsed().as_millis()));
+                // #endregion
+                
                 // Add track and get renegotiation offer if needed
                 if let Some(offer_sdp) = state.webrtc_manager.write().await.add_window_track(window_id).await? {
                     // Send renegotiation offer to client
@@ -174,14 +220,43 @@ where
                         .send(Message::Text(json))
                         .await
                         .map_err(|e| anyhow!("Send error: {}", e))?;
+                    // #region agent log
+                    debug_log("B", "websocket:subscribe", "Renegotiation offer sent", 
+                        &format!("{{\"window_id\":{},\"elapsed_ms\":{}}}", window_id, subscribe_start.elapsed().as_millis()));
+                    // #endregion
                     info!("Sent renegotiation offer to client for window {}", window_id);
                     renegotiated_windows.push(window_id);
                     
                     // Request a keyframe so client gets fresh decoder state after renegotiation
+                    // #region agent log
+                    let keyframe_start = std::time::Instant::now();
+                    // #endregion
                     if let Err(e) = crate::capture::request_keyframe(window_id) {
                         debug!("Could not request keyframe for {}: {}", window_id, e);
                     }
+                    // #region agent log
+                    debug_log("C", "websocket:subscribe", "Keyframe requested", 
+                        &format!("{{\"window_id\":{},\"elapsed_ms\":{}}}", window_id, keyframe_start.elapsed().as_millis()));
+                    // #endregion
                 }
+            }
+            // #region agent log
+            debug_log("B", "websocket:subscribe", "Subscribe complete", 
+                &format!("{{\"total_elapsed_ms\":{}}}", subscribe_start.elapsed().as_millis()));
+            // #endregion
+        }
+
+        IncomingMessage::Viewport { window_id, x, y, width, height } => {
+            debug!("Viewport update for window {}: x={}, y={}, w={}, h={}", 
+                   window_id, x, y, width, height);
+            
+            let viewport = crate::video::Viewport { x, y, width, height };
+            state.set_viewport(window_id, viewport);
+            
+            // Request a keyframe when viewport changes significantly
+            // This ensures the client gets a fresh frame with the new crop
+            if let Err(e) = crate::capture::request_keyframe(window_id) {
+                debug!("Could not request keyframe for viewport change: {}", e);
             }
         }
 

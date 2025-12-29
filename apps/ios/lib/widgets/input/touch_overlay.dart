@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../theme/remote_theme.dart';
 import '../../services/input_service.dart';
+import '../../services/stream_service.dart';
 import '../../utils/haptics.dart';
 
 /// Transparent overlay that captures touch gestures and translates them to input events
 class TouchOverlay extends StatefulWidget {
   final Widget child;
   final InputService inputService;
+  final StreamService? streamService;
   final int windowId;
   final VoidCallback? onTwoFingerSwipeLeft;
   final VoidCallback? onTwoFingerSwipeRight;
@@ -19,6 +21,7 @@ class TouchOverlay extends StatefulWidget {
     required this.child,
     required this.inputService,
     required this.windowId,
+    this.streamService,
     this.onTwoFingerSwipeLeft,
     this.onTwoFingerSwipeRight,
     this.onThreeFingerSwipeDown,
@@ -35,12 +38,69 @@ class _TouchOverlayState extends State<TouchOverlay> {
   Timer? _longPressTimer;
   bool _longPressTriggered = false;
   
-  // For pinch zoom
-  double _initialScale = 1.0;
-  double _currentScale = 1.0;
+  // For pinch zoom - actual zoom state
+  double _scale = 1.0;
+  double _previousScale = 1.0;
+  Offset _offset = Offset.zero;
+  Offset _previousOffset = Offset.zero;
+  Offset _focalPoint = Offset.zero;
+  
+  // Viewport update debouncing
+  Timer? _viewportDebouncer;
   
   // For ripple effect
   final List<_RippleData> _ripples = [];
+  
+  /// Calculate the current viewport based on zoom state
+  /// Returns (x, y, width, height) in normalized 0.0-1.0 coordinates
+  (double, double, double, double) _calculateViewport(Size size) {
+    if (_scale <= 1.0) {
+      return (0.0, 0.0, 1.0, 1.0);
+    }
+    
+    // Width and height of visible area as fraction of full image
+    final viewWidth = 1.0 / _scale;
+    final viewHeight = 1.0 / _scale;
+    
+    // Calculate offset as fraction of image
+    // Offset is in screen pixels, need to convert to image fraction
+    final offsetX = -_offset.dx / (size.width * _scale);
+    final offsetY = -_offset.dy / (size.height * _scale);
+    
+    // Clamp to valid range
+    final x = offsetX.clamp(0.0, 1.0 - viewWidth);
+    final y = offsetY.clamp(0.0, 1.0 - viewHeight);
+    
+    return (x, y, viewWidth, viewHeight);
+  }
+  
+  /// Send viewport update to server (debounced)
+  void _sendViewportUpdate() {
+    _viewportDebouncer?.cancel();
+    _viewportDebouncer = Timer(const Duration(milliseconds: 100), () {
+      if (widget.streamService == null) return;
+      
+      final size = context.size ?? const Size(1, 1);
+      final (x, y, w, h) = _calculateViewport(size);
+      
+      widget.streamService!.updateViewport(
+        windowId: widget.windowId,
+        x: x,
+        y: y,
+        width: w,
+        height: h,
+      );
+    });
+  }
+  
+  /// Reset zoom to 1:1
+  void resetZoom() {
+    setState(() {
+      _scale = 1.0;
+      _offset = Offset.zero;
+    });
+    _sendViewportUpdate();
+  }
 
   Offset _normalizePosition(Offset localPosition, Size size) {
     return Offset(
@@ -120,7 +180,9 @@ class _TouchOverlayState extends State<TouchOverlay> {
 
   void _handleScaleStart(ScaleStartDetails details) {
     _dragStartPosition = details.localFocalPoint;
-    _initialScale = _currentScale;
+    _focalPoint = details.localFocalPoint;
+    _previousScale = _scale;
+    _previousOffset = _offset;
     _longPressTimer?.cancel();
     
     if (details.pointerCount == 1) {
@@ -142,47 +204,82 @@ class _TouchOverlayState extends State<TouchOverlay> {
     final normalized = _normalizePosition(details.localFocalPoint, size);
     
     if (details.pointerCount == 1 && _isDragging) {
-      // Single finger drag
-      widget.inputService.sendMove(
-        windowId: widget.windowId,
-        x: normalized.dx,
-        y: normalized.dy,
-        isDragging: true,
-      );
-    } else if (details.pointerCount == 2) {
-      if (details.scale != 1.0) {
-        // Pinch zoom - convert to scroll
-        final scaleDelta = details.scale - _initialScale;
-        _currentScale = _initialScale + scaleDelta;
-        
-        // Scroll based on scale change
-        final scrollDelta = (details.scale - 1.0) * 50;
-        widget.inputService.sendScroll(
-          windowId: widget.windowId,
-          x: normalized.dx,
-          y: normalized.dy,
-          deltaX: 0,
-          deltaY: scrollDelta,
-        );
-      } else if (_dragStartPosition != null) {
-        // Two-finger scroll
+      // Single finger drag - if zoomed in, pan the view; otherwise, mouse drag
+      if (_scale > 1.0) {
+        // Pan the zoomed view
         final delta = details.localFocalPoint - _dragStartPosition!;
-        
-        widget.inputService.sendScroll(
+        setState(() {
+          _offset = _previousOffset + delta;
+          _clampOffset(size);
+        });
+        _dragStartPosition = details.localFocalPoint;
+        _previousOffset = _offset;
+        _sendViewportUpdate();
+      } else {
+        // Normal mouse drag
+        widget.inputService.sendMove(
           windowId: widget.windowId,
           x: normalized.dx,
           y: normalized.dy,
-          deltaX: delta.dx * 0.5,
-          deltaY: delta.dy * 0.5,
+          isDragging: true,
         );
+      }
+    } else if (details.pointerCount == 2) {
+      // Pinch zoom - actual zoom with viewport update
+      final newScale = (_previousScale * details.scale).clamp(1.0, 4.0);
+      
+      if ((newScale - _scale).abs() > 0.01) {
+        setState(() {
+          // Calculate focal point relative offset
+          final focalOffset = _focalPoint - _offset;
+          
+          // Update scale
+          _scale = newScale;
+          
+          // Adjust offset to keep focal point stable
+          if (_scale > 1.0) {
+            final scaleDiff = _scale / _previousScale;
+            _offset = _focalPoint - (focalOffset * scaleDiff);
+            _clampOffset(size);
+          } else {
+            _offset = Offset.zero;
+          }
+        });
         
-        _dragStartPosition = details.localFocalPoint;
+        _sendViewportUpdate();
+      }
+      
+      // Also handle two-finger pan while zooming
+      if (_scale > 1.0 && _dragStartPosition != null) {
+        final delta = details.localFocalPoint - _dragStartPosition!;
+        if (delta.distance > 2) {
+          setState(() {
+            _offset = _previousOffset + delta;
+            _clampOffset(size);
+          });
+        }
       }
     }
   }
+  
+  void _clampOffset(Size size) {
+    if (_scale <= 1.0) {
+      _offset = Offset.zero;
+      return;
+    }
+    
+    // Calculate bounds for offset
+    final maxOffsetX = size.width * (_scale - 1);
+    final maxOffsetY = size.height * (_scale - 1);
+    
+    _offset = Offset(
+      _offset.dx.clamp(-maxOffsetX, 0),
+      _offset.dy.clamp(-maxOffsetY, 0),
+    );
+  }
 
   void _handleScaleEnd(ScaleEndDetails details) {
-    if (_isDragging) {
+    if (_isDragging && _scale <= 1.0) {
       final size = context.size ?? const Size(1, 1);
       final lastPos = _dragStartPosition ?? Offset.zero;
       final normalized = _normalizePosition(lastPos, size);
@@ -194,8 +291,8 @@ class _TouchOverlayState extends State<TouchOverlay> {
       );
     }
     
-    // Check for swipe gestures
-    if (details.velocity.pixelsPerSecond.dx.abs() > 500) {
+    // Check for swipe gestures (only when not zoomed)
+    if (_scale <= 1.0 && details.velocity.pixelsPerSecond.dx.abs() > 500) {
       if (details.velocity.pixelsPerSecond.dx > 0) {
         widget.onTwoFingerSwipeRight?.call();
       } else {
@@ -205,7 +302,8 @@ class _TouchOverlayState extends State<TouchOverlay> {
     
     _isDragging = false;
     _dragStartPosition = null;
-    _initialScale = 1.0;
+    _previousScale = _scale;
+    _previousOffset = _offset;
   }
 
   /// Handles two-finger tap for right-click (to be wired up to gesture detector)
@@ -249,6 +347,7 @@ class _TouchOverlayState extends State<TouchOverlay> {
   @override
   void dispose() {
     _longPressTimer?.cancel();
+    _viewportDebouncer?.cancel();
     super.dispose();
   }
 
@@ -258,7 +357,7 @@ class _TouchOverlayState extends State<TouchOverlay> {
       onTapDown: _handleTapDown,
       onTapUp: _handleTapUp,
       onTapCancel: _handleTapCancel,
-      onDoubleTap: _handleDoubleTap,
+      onDoubleTap: _scale > 1.0 ? resetZoom : _handleDoubleTap, // Double-tap to reset zoom
       onScaleStart: _handleScaleStart,
       onScaleUpdate: _handleScaleUpdate,
       onScaleEnd: _handleScaleEnd,
@@ -266,7 +365,36 @@ class _TouchOverlayState extends State<TouchOverlay> {
       behavior: HitTestBehavior.translucent,
       child: Stack(
         children: [
-          widget.child,
+          // Apply zoom transformation to child
+          ClipRect(
+            child: Transform(
+              transform: Matrix4.identity()
+                ..translate(_offset.dx, _offset.dy)
+                ..scale(_scale),
+              child: widget.child,
+            ),
+          ),
+          
+          // Zoom indicator when zoomed in
+          if (_scale > 1.0)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '${(_scale * 100).toInt()}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
           
           // Ripple effects
           ..._ripples.map((ripple) => _RippleWidget(

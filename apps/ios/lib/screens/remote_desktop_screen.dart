@@ -157,6 +157,7 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
                     key: const Key('video_container'),
                     child: TouchOverlay(
                       inputService: inputService,
+                      streamService: streamProvider.streamService,
                       windowId: activeWindow.id,
                       onTwoFingerSwipeLeft: _switchToNextWindow,
                       onTwoFingerSwipeRight: _switchToPreviousWindow,

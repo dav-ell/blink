@@ -7,6 +7,7 @@ pub mod capture;
 pub mod config;
 pub mod input;
 pub mod server;
+pub mod video;
 pub mod webrtc_handler;
 
 pub use config::Config;

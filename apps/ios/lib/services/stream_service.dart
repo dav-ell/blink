@@ -137,6 +137,30 @@ class StreamService extends ChangeNotifier {
     _updateState(_state.copyWith(activeWindowId: windowId));
   }
 
+  /// Update viewport for a window (for pinch-zoom crop)
+  /// Coordinates are normalized 0.0-1.0
+  void updateViewport({
+    required int windowId,
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+  }) {
+    if (_windowsChannel == null) return;
+
+    final message = jsonEncode({
+      'type': 'viewport',
+      'window_id': windowId,
+      'x': x.clamp(0.0, 1.0),
+      'y': y.clamp(0.0, 1.0),
+      'width': width.clamp(0.01, 1.0),
+      'height': height.clamp(0.01, 1.0),
+    });
+    
+    _windowsChannel!.sink.add(message);
+    debugPrint('[DEBUG] Sent viewport: x=$x, y=$y, w=$width, h=$height');
+  }
+
   /// Get renderer for a specific window
   RTCVideoRenderer? getRenderer(String windowId) {
     return _renderers[windowId];

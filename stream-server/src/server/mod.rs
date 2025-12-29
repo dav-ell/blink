@@ -12,9 +12,12 @@ use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace};
 
+use std::collections::HashMap;
+
 use crate::capture::{CaptureManager, EncodedFrame, set_frame_callback};
 use crate::config::Config;
 use crate::input::InputInjector;
+use crate::video::{VideoConfig, Viewport};
 use crate::webrtc_handler::{WebRtcManager, H264RtpPacketizer};
 
 /// Frame data to be sent via channel (owned version of EncodedFrame)
@@ -83,16 +86,41 @@ pub struct ServerState {
     pub webrtc_manager: RwLock<WebRtcManager>,
     pub input_injector: InputInjector,
     pub rtp_packetizer: H264RtpPacketizer,
+    /// Video configuration for scaling
+    pub video_config: VideoConfig,
+    /// Viewport per window (for crop/zoom)
+    pub viewports: SyncRwLock<HashMap<u32, Viewport>>,
 }
 
 impl ServerState {
     pub fn new() -> Self {
+        Self::with_video_config(VideoConfig::default())
+    }
+    
+    pub fn with_video_config(video_config: VideoConfig) -> Self {
         Self {
             capture_manager: CaptureManager::new(),
             webrtc_manager: RwLock::new(WebRtcManager::new()),
             input_injector: InputInjector::new(),
             rtp_packetizer: H264RtpPacketizer::new(),
+            video_config,
+            viewports: SyncRwLock::new(HashMap::new()),
         }
+    }
+    
+    /// Set viewport for a window
+    pub fn set_viewport(&self, window_id: u32, viewport: Viewport) {
+        self.viewports.write().insert(window_id, viewport);
+        debug!("Updated viewport for window {}: {:?}", window_id, viewport);
+    }
+    
+    /// Get viewport for a window (defaults to full frame)
+    pub fn get_viewport(&self, window_id: u32) -> Viewport {
+        self.viewports
+            .read()
+            .get(&window_id)
+            .copied()
+            .unwrap_or_default()
     }
 }
 
@@ -162,7 +190,15 @@ impl Server {
 
     /// Create a server with a custom cancellation token for graceful shutdown
     pub fn with_cancel_token(config: Config, cancel_token: CancellationToken) -> Self {
-        let state = Arc::new(ServerState::new());
+        // Create video config from server config
+        let (target_width, target_height) = config.video_dimensions();
+        let video_config = VideoConfig {
+            target_width,
+            target_height,
+            enable_scaling: config.video_scaling_enabled,
+        };
+        
+        let state = Arc::new(ServerState::with_video_config(video_config));
         
         // Register the frame callback
         set_frame_callback(on_encoded_frame);
@@ -188,6 +224,27 @@ impl Server {
     pub fn shutdown(&self) {
         self.cancel_token.cancel();
     }
+    
+    // #region agent log
+    fn debug_log(hypothesis: &str, location: &str, message: &str, data: &str) {
+        use std::io::Write;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let log_line = format!(
+            "{{\"hypothesisId\":\"{}\",\"location\":\"{}\",\"message\":\"{}\",\"data\":{},\"timestamp\":{},\"sessionId\":\"debug-session\"}}\n",
+            hypothesis, location, message, data, ts
+        );
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/Users/davell/Documents/github/blink/.cursor/debug.log") 
+        {
+            let _ = f.write_all(log_line.as_bytes());
+        }
+    }
+    // #endregion
 
     pub async fn run(&self) -> Result<()> {
         // Create channel for frame data
@@ -219,11 +276,26 @@ impl Server {
                         
                         frame_count += 1;
                         
+                        // #region agent log
+                        // Log first few frames to see timing
+                        if frame_count <= 5 || frame_count % 60 == 0 {
+                            Self::debug_log("E", "mod.rs:frame_task", "Frame received in task", 
+                                &format!("{{\"frame_count\":{},\"window_id\":{},\"size\":{}}}", 
+                                    frame_count, frame.window_id, frame.data.len()));
+                        }
+                        // #endregion
+                        
                         // Get the track for this window
                         let webrtc = state_for_frames.webrtc_manager.read().await;
                         let track = match webrtc.get_track(frame.window_id) {
                             Some(t) => t,
                             None => {
+                                // #region agent log
+                                if frame_count <= 10 {
+                                    Self::debug_log("E", "mod.rs:frame_task", "No track for frame", 
+                                        &format!("{{\"frame_count\":{},\"window_id\":{}}}", frame_count, frame.window_id));
+                                }
+                                // #endregion
                                 if frame_count % 30 == 1 {
                                     debug!("No track for window {} (frame #{})", frame.window_id, frame_count);
                                 }
@@ -248,6 +320,13 @@ impl Server {
                         {
                             debug!("Failed to send frame: {}", e);
                         }
+                        
+                        // #region agent log
+                        if frame_count <= 5 {
+                            Self::debug_log("E", "mod.rs:frame_task", "Frame sent via RTP", 
+                                &format!("{{\"frame_count\":{}}}", frame_count));
+                        }
+                        // #endregion
                     }
                 }
             }

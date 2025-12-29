@@ -11,6 +11,28 @@ use tracing_subscriber::FmtSubscriber;
 use blink_stream_server::capture;
 use blink_stream_server::config::Config;
 use blink_stream_server::server::{mdns, Server};
+use blink_stream_server::video::VideoPipeline;
+
+// #region agent log
+fn debug_log(hypothesis: &str, location: &str, message: &str, data: &str) {
+    use std::io::Write;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let log_line = format!(
+        "{{\"hypothesisId\":\"{}\",\"location\":\"{}\",\"message\":\"{}\",\"data\":{},\"timestamp\":{},\"sessionId\":\"debug-session\"}}\n",
+        hypothesis, location, message, data, ts
+    );
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/Users/davell/Documents/github/blink/.cursor/debug.log") 
+    {
+        let _ = f.write_all(log_line.as_bytes());
+    }
+}
+// #endregion
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -28,6 +50,18 @@ async fn main() -> Result<()> {
     capture::initialize()?;
     info!("ScreenCaptureKit bridge initialized");
 
+    // Initialize GStreamer for video processing
+    // #region agent log
+    let gst_start = std::time::Instant::now();
+    // #endregion
+    VideoPipeline::init()?;
+    // #region agent log
+    let gst_elapsed = gst_start.elapsed();
+    debug_log("A", "main.rs:gst_init", "GStreamer init completed", 
+        &format!("{{\"elapsed_ms\":{}}}", gst_elapsed.as_millis()));
+    // #endregion
+    info!("GStreamer initialized for video scaling");
+
     // Load configuration - check for BLINK_PORT env var or CLI arg
     let port = env::var("BLINK_PORT")
         .ok()
@@ -43,7 +77,11 @@ async fn main() -> Result<()> {
         .unwrap_or(8080);
     
     let config = Config::new(port);
-    info!("Configuration loaded: port={}", config.port);
+    let (vw, vh) = config.video_dimensions();
+    info!(
+        "Configuration loaded: port={}, video={}x{}, scaling={}",
+        config.port, vw, vh, config.video_scaling_enabled
+    );
 
     // Start mDNS advertisement
     let mdns_handle = mdns::advertise_service(config.port, &config.server_name)?;
