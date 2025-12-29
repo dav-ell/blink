@@ -73,6 +73,7 @@ class _WindowPickerScreenState extends State<WindowPickerScreen> {
         ),
         middle: const Text('Select Windows'),
         trailing: CupertinoButton(
+          key: const Key('window_picker_done_button'),
           padding: EdgeInsets.zero,
           onPressed: _selectedWindowIds.isEmpty ? null : _startStreaming,
           child: Text(
@@ -153,9 +154,11 @@ class _WindowPickerScreenState extends State<WindowPickerScreen> {
                             return FadeSlideIn(
                               delay: StaggeredListAnimation.getDelay(index),
                               child: _WindowTile(
+                                key: Key('window_tile_$index'),
                                 window: window,
                                 isSelected: isSelected,
                                 onTap: () => _toggleWindow(window),
+                                index: index,
                               ),
                             );
                           },
@@ -214,11 +217,14 @@ class _WindowTile extends StatelessWidget {
   final RemoteWindow window;
   final bool isSelected;
   final VoidCallback onTap;
+  final int index;
 
   const _WindowTile({
+    super.key,
     required this.window,
     required this.isSelected,
     required this.onTap,
+    required this.index,
   });
 
   @override

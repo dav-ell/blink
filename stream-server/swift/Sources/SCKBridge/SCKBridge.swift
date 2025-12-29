@@ -5,6 +5,44 @@ import Foundation
 import ScreenCaptureKit
 import CoreGraphics
 import CoreMedia
+import AppKit
+import VideoToolbox
+
+// MARK: - FFI Types (must match Rust definitions)
+
+/// Encoded frame structure matching Rust's EncodedFrame
+@frozen
+public struct EncodedFrameFFI {
+    public let windowId: UInt32
+    public let timestampMs: UInt64
+    public let isKeyframe: Bool
+    public let data: UnsafePointer<UInt8>
+    public let dataLen: Int
+    public let width: UInt32
+    public let height: UInt32
+}
+
+/// Import the Rust callback function
+@_silgen_name("rust_on_encoded_frame")
+func rustOnEncodedFrame(_ frame: UnsafePointer<EncodedFrameFFI>)
+
+// MARK: - App Initialization
+
+/// Initialize the app context for Window Server access
+/// This MUST be called before any ScreenCaptureKit or CoreGraphics window operations
+/// Returns: 0 on success
+@_cdecl("sck_initialize")
+public func sck_initialize() -> Int32 {
+    // Ensure we're connected to the Window Server
+    // This is required for CLI apps to use ScreenCaptureKit
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.accessory)
+    
+    // Run the run loop briefly to process initialization
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+    
+    return 0
+}
 
 // MARK: - Capture Session Manager
 
@@ -49,9 +87,50 @@ private class CaptureSession {
     let windowId: UInt32
     var stream: SCStream?
     var outputHandler: FrameOutputHandler?
+    var encoder: H264Encoder?
+    let width: Int
+    let height: Int
     
-    init(windowId: UInt32) {
+    init(windowId: UInt32, width: Int, height: Int) {
         self.windowId = windowId
+        self.width = width
+        self.height = height
+    }
+    
+    func startEncoder() {
+        let enc = H264Encoder(windowId: windowId, width: width, height: height)
+        
+        let success = enc.start { [weak self] windowId, timestampMs, isKeyframe, nalData, width, height in
+            guard let _ = self else { return }
+            
+            // Call Rust with the encoded frame
+            nalData.withUnsafeBytes { buffer in
+                guard let ptr = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+                
+                var frame = EncodedFrameFFI(
+                    windowId: windowId,
+                    timestampMs: timestampMs,
+                    isKeyframe: isKeyframe,
+                    data: ptr,
+                    dataLen: nalData.count,
+                    width: UInt32(width),
+                    height: UInt32(height)
+                )
+                
+                withUnsafePointer(to: &frame) { framePtr in
+                    rustOnEncodedFrame(framePtr)
+                }
+            }
+        }
+        
+        if success {
+            self.encoder = enc
+        }
+    }
+    
+    func stopEncoder() {
+        encoder?.stop()
+        encoder = nil
     }
 }
 
@@ -176,64 +255,85 @@ private func startCaptureImpl(windowId: UInt32) -> Int32 {
         return 0 // Already capturing
     }
     
-    let semaphore = DispatchSemaphore(value: 0)
+    let contentSemaphore = DispatchSemaphore(value: 0)
+    let captureSemaphore = DispatchSemaphore(value: 0)
     var success = false
     
     SCShareableContent.getExcludingDesktopWindows(true, onScreenWindowsOnly: true) { content, error in
-        defer { semaphore.signal() }
-        
         guard let content = content, error == nil else {
+            contentSemaphore.signal()
             return
         }
         
         // Find the window
         guard let window = content.windows.first(where: { $0.windowID == windowId }) else {
+            print("Window \(windowId) not found in available windows")
+            contentSemaphore.signal()
             return
         }
+        
+        let frameWidth = Int(window.frame.width)
+        let frameHeight = Int(window.frame.height)
         
         // Create content filter for single window
         let filter = SCContentFilter(desktopIndependentWindow: window)
         
         // Configure stream
         let config = SCStreamConfiguration()
-        config.width = Int(window.frame.width)
-        config.height = Int(window.frame.height)
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 60) // 60 FPS max
-        config.queueDepth = 5
+        config.width = frameWidth
+        config.height = frameHeight
+        config.minimumFrameInterval = CMTime(value: 1, timescale: 30) // 30 FPS for encoding
+        config.queueDepth = 3
         config.showsCursor = true
         config.pixelFormat = kCVPixelFormatType_32BGRA
         
-        // Create capture session
-        let session = CaptureSession(windowId: windowId)
+        // Create capture session with dimensions
+        let session = CaptureSession(windowId: windowId, width: frameWidth, height: frameHeight)
+        
+        // Start the H264 encoder
+        session.startEncoder()
         
         // Create stream
         let stream = SCStream(filter: filter, configuration: config, delegate: nil)
         
         do {
-            // Add stream output
-            let output = FrameOutputHandler(windowId: windowId)
+            // Add stream output - pass session reference for encoder access
+            let output = FrameOutputHandler(windowId: windowId, session: session)
             try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .global(qos: .userInteractive))
             
             session.outputHandler = output
             session.stream = stream
             
-            // Start capture
-            stream.startCapture { error in
-                if let error = error {
-                    print("Failed to start capture: \(error)")
-                    return
+            // Store session before starting (so bounds are available)
+            manager.setSession(windowId, session: session)
+            
+            // Start capture and wait for completion
+            stream.startCapture { captureError in
+                if let captureError = captureError {
+                    print("Failed to start capture: \(captureError)")
+                    session.stopEncoder()
+                    manager.setSession(windowId, session: nil)
+                } else {
+                    success = true
+                    print("Capture started successfully for window \(windowId) at \(frameWidth)x\(frameHeight)")
                 }
-                success = true
+                captureSemaphore.signal()
             }
             
-            manager.setSession(windowId, session: session)
+            contentSemaphore.signal()
             
         } catch {
             print("Failed to setup stream: \(error)")
+            session.stopEncoder()
+            contentSemaphore.signal()
         }
     }
     
-    _ = semaphore.wait(timeout: .now() + 5.0)
+    // Wait for content enumeration
+    _ = contentSemaphore.wait(timeout: .now() + 5.0)
+    
+    // Wait for capture to start
+    _ = captureSemaphore.wait(timeout: .now() + 5.0)
     
     return success ? 0 : -1
 }
@@ -255,6 +355,9 @@ private func stopCaptureImpl(windowId: UInt32) -> Int32 {
     guard let session = manager.removeSession(windowId) else {
         return 0 // Not capturing
     }
+    
+    // Stop encoder first
+    session.stopEncoder()
     
     session.stream?.stopCapture { error in
         if let error = error {
@@ -289,38 +392,41 @@ public func sck_has_permission() -> Int32 {
 @available(macOS 12.3, *)
 private class FrameOutputHandler: NSObject, SCStreamOutput {
     let windowId: UInt32
+    private weak var session: CaptureSession?
+    private var frameCount: UInt64 = 0
     
-    init(windowId: UInt32) {
+    init(windowId: UInt32, session: CaptureSession) {
         self.windowId = windowId
+        self.session = session
         super.init()
     }
     
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen else { return }
         
+        frameCount += 1
+        
         // Get pixel buffer
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            print("FrameOutputHandler: No pixel buffer in sample")
             return
         }
         
-        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
-        
-        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
-            return
+        // Log every 30 frames
+        if frameCount % 30 == 1 {
+            print("FrameOutputHandler: Captured frame #\(frameCount) for window \(windowId)")
         }
-        
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let dataSize = bytesPerRow * height
         
         // Get timestamp
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        let timestamp = UInt64(CMTimeGetSeconds(pts) * 1000) // Milliseconds
         
-        // Frame data is available here for processing
-        // In a full implementation, this would be sent to the WebRTC track
-        _ = (windowId, width, height, dataSize, timestamp, baseAddress)
+        // Encode the frame
+        if session?.encoder != nil {
+            session?.encoder?.encode(pixelBuffer: pixelBuffer, timestamp: pts)
+        } else {
+            if frameCount == 1 {
+                print("FrameOutputHandler: No encoder for window \(windowId)")
+            }
+        }
     }
 }

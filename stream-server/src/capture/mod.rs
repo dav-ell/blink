@@ -2,6 +2,8 @@
 
 mod bridge;
 
+pub use bridge::{initialize, set_frame_callback, EncodedFrame, FrameCallbackFn};
+
 use std::collections::HashMap;
 use std::sync::Arc;
 

@@ -154,6 +154,7 @@ class _RemoteDesktopScreenState extends State<RemoteDesktopScreen>
                 // Video stream with touch overlay
                 if (activeWindow != null)
                   Positioned.fill(
+                    key: const Key('video_container'),
                     child: TouchOverlay(
                       inputService: inputService,
                       windowId: activeWindow.id,

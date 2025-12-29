@@ -5,21 +5,94 @@
 
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
-use std::ffi::{c_char, CStr};
-use tracing::debug;
+use std::ffi::{c_char, c_void, CStr};
+use std::sync::atomic::{AtomicPtr, Ordering};
+use tracing::{debug, trace};
 
 use super::{WindowBounds, WindowInfo};
+
+/// Encoded video frame from Swift
+#[repr(C)]
+#[derive(Debug)]
+pub struct EncodedFrame {
+    /// Window ID this frame belongs to
+    pub window_id: u32,
+    /// Presentation timestamp in milliseconds
+    pub timestamp_ms: u64,
+    /// Whether this is a keyframe (IDR)
+    pub is_keyframe: bool,
+    /// Pointer to NAL unit data (AVCC format with length prefixes)
+    pub data: *const u8,
+    /// Length of the data in bytes
+    pub data_len: usize,
+    /// Frame width
+    pub width: u32,
+    /// Frame height
+    pub height: u32,
+}
+
+/// Callback function type for receiving encoded frames from Swift
+/// The callback receives a pointer to EncodedFrame
+pub type FrameCallbackFn = extern "C" fn(*const EncodedFrame);
+
+/// Global frame callback - set by Rust, called by Swift
+static FRAME_CALLBACK: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Set the global frame callback that Swift will call with encoded frames
+pub fn set_frame_callback(callback: FrameCallbackFn) {
+    FRAME_CALLBACK.store(callback as *mut c_void, Ordering::SeqCst);
+    debug!("Frame callback registered");
+}
+
+/// Called by Swift when an encoded frame is ready
+/// This is exported as a C function for Swift to call
+#[no_mangle]
+pub extern "C" fn rust_on_encoded_frame(frame: *const EncodedFrame) {
+    if frame.is_null() {
+        return;
+    }
+
+    let callback_ptr = FRAME_CALLBACK.load(Ordering::SeqCst);
+    if callback_ptr.is_null() {
+        trace!("Frame received but no callback registered");
+        return;
+    }
+
+    // Call the registered callback
+    let callback: FrameCallbackFn = unsafe { std::mem::transmute(callback_ptr) };
+    callback(frame);
+}
 
 // External Swift bridge functions
 // These are implemented in the Swift package and linked at build time
 #[cfg(target_os = "macos")]
 extern "C" {
+    fn sck_initialize() -> i32;
     fn sck_get_windows_json() -> *mut c_char;
     fn sck_free_string(ptr: *mut c_char);
     fn sck_get_window_count() -> i32;
     fn sck_start_capture(window_id: u32) -> i32;
     fn sck_stop_capture(window_id: u32) -> i32;
     fn sck_has_permission() -> i32;
+}
+
+/// Initialize the app context for Window Server access
+/// This MUST be called before any ScreenCaptureKit operations
+#[cfg(target_os = "macos")]
+pub fn initialize() -> Result<()> {
+    unsafe {
+        let result = sck_initialize();
+        if result != 0 {
+            return Err(anyhow!("Failed to initialize ScreenCaptureKit bridge"));
+        }
+    }
+    debug!("ScreenCaptureKit bridge initialized");
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn initialize() -> Result<()> {
+    Ok(())
 }
 
 /// JSON structure for deserializing window info from Swift

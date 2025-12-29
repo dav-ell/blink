@@ -129,6 +129,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               vertical: RemoteTheme.spacingXS,
                             ),
                             child: ServerCard(
+                              key: Key('discovered_server_$index'),
                               server: server,
                               onTap: () => _connectToServer(server),
                               isConnecting: provider.state.server?.id == server.id &&
@@ -157,6 +158,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                             vertical: RemoteTheme.spacingXS,
                           ),
                           child: ServerCard(
+                            key: Key('recent_server_$index'),
                             server: server,
                             onTap: () => _connectToServer(server),
                             isConnecting: provider.state.server?.id == server.id &&

@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:stream_channel/stream_channel.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:blink/models/server.dart';
 import 'package:blink/models/remote_window.dart';
 import 'package:blink/models/connection_state.dart';
+import 'package:blink/services/discovery_service.dart';
+import 'package:blink/services/stream_service.dart';
+import 'package:blink/services/preferences_service.dart';
 
 /// Mock WebSocket sink that captures sent messages
 class MockWebSocketSink implements WebSocketSink {
@@ -89,93 +93,106 @@ class MockWebSocketChannel with StreamChannelMixin implements WebSocketChannel {
   String get lastSentMessage => _sink.lastMessage;
 }
 
-/// Mock discovery service for testing
-class MockDiscoveryService extends ChangeNotifier {
-  final Map<String, StreamServer> _servers = {};
-  bool _isDiscovering = false;
-  String? _error;
+/// Mock discovery service for testing - extends real DiscoveryService
+class MockDiscoveryService extends DiscoveryService {
+  final Map<String, StreamServer> _mockServers = {};
+  bool _mockIsDiscovering = false;
+  String? _mockError;
 
-  List<StreamServer> get servers => _servers.values.toList()
+  @override
+  List<StreamServer> get servers => _mockServers.values.toList()
     ..sort((a, b) => (b.lastSeen ?? DateTime(0)).compareTo(a.lastSeen ?? DateTime(0)));
 
-  bool get isDiscovering => _isDiscovering;
+  @override
+  bool get isDiscovering => _mockIsDiscovering;
 
-  String? get error => _error;
+  @override
+  String? get error => _mockError;
 
+  @override
   Future<void> startDiscovery() async {
-    _isDiscovering = true;
-    _error = null;
+    _mockIsDiscovering = true;
+    _mockError = null;
     notifyListeners();
   }
 
+  @override
   Future<void> stopDiscovery() async {
-    _isDiscovering = false;
+    _mockIsDiscovering = false;
     notifyListeners();
   }
 
+  @override
   void addManualServer(String host, {int port = 8080, String? name}) {
     final server = StreamServer.manual(host: host, port: port, name: name);
-    _servers[server.id] = server;
+    _mockServers[server.id] = server;
     notifyListeners();
   }
 
+  @override
   void removeServer(String serverId) {
-    _servers.remove(serverId);
+    _mockServers.remove(serverId);
     notifyListeners();
   }
 
+  @override
   void refreshServer(String serverId) {
-    final server = _servers[serverId];
+    final server = _mockServers[serverId];
     if (server != null) {
-      _servers[serverId] = server.copyWith(lastSeen: DateTime.now());
+      _mockServers[serverId] = server.copyWith(lastSeen: DateTime.now());
       notifyListeners();
     }
   }
 
   /// Simulate discovering a server
   void simulateServerFound(StreamServer server) {
-    _servers[server.id] = server;
+    _mockServers[server.id] = server;
     notifyListeners();
   }
 
   /// Simulate losing a server
   void simulateServerLost(String serverId) {
-    _servers.remove(serverId);
+    _mockServers.remove(serverId);
     notifyListeners();
   }
 
   /// Simulate an error
   void simulateError(String error) {
-    _error = error;
-    _isDiscovering = false;
+    _mockError = error;
+    _mockIsDiscovering = false;
     notifyListeners();
   }
 }
 
-/// Mock stream service for testing
-class MockStreamService extends ChangeNotifier {
-  StreamConnectionState _state = StreamConnectionState.initial;
-  final Map<String, dynamic> _renderers = {};
+/// Mock stream service for testing - extends real StreamService
+class MockStreamService extends StreamService {
+  StreamConnectionState _mockState = StreamConnectionState.initial;
+  final Map<String, RTCVideoRenderer> _mockRenderers = {};
 
-  StreamConnectionState get state => _state;
+  @override
+  StreamConnectionState get state => _mockState;
 
-  Map<String, dynamic> get renderers => Map.unmodifiable(_renderers);
+  @override
+  Map<String, RTCVideoRenderer> get renderers => Map.unmodifiable(_mockRenderers);
 
+  @override
   Future<void> connect(StreamServer server) async {
-    _state = _state.copyWith(
+    _mockState = _mockState.copyWith(
       phase: ConnectionPhase.connecting,
       server: server,
     );
     notifyListeners();
   }
 
+  @override
   Future<void> disconnect() async {
-    _state = StreamConnectionState.initial;
+    _mockState = StreamConnectionState.initial;
     notifyListeners();
   }
 
+  @override
   Future<void> subscribeToWindows(List<int> windowIds) async {
-    final subscribedWindows = _state.availableWindows
+    final subscribedWindows = _mockState.availableWindows
         .where((w) => windowIds.contains(w.id))
         .toList();
 
@@ -184,34 +201,36 @@ class MockStreamService extends ChangeNotifier {
         ? subscribedWindows.first.id.toString() 
         : null;
     
-    _state = StreamConnectionState(
-      phase: _state.phase,
-      server: _state.server,
-      availableWindows: _state.availableWindows,
+    _mockState = StreamConnectionState(
+      phase: _mockState.phase,
+      server: _mockState.server,
+      availableWindows: _mockState.availableWindows,
       subscribedWindows: subscribedWindows,
       activeWindowId: newActiveWindowId,
-      error: _state.error,
-      connectedAt: _state.connectedAt,
+      error: _mockState.error,
+      connectedAt: _mockState.connectedAt,
     );
     notifyListeners();
   }
 
+  @override
   void setActiveWindow(String windowId) {
-    _state = _state.copyWith(activeWindowId: windowId);
+    _mockState = _mockState.copyWith(activeWindowId: windowId);
     notifyListeners();
   }
 
-  dynamic getRenderer(String windowId) => _renderers[windowId];
+  @override
+  RTCVideoRenderer? getRenderer(String windowId) => _mockRenderers[windowId];
 
   /// Simulate state change
   void simulateStateChange(StreamConnectionState newState) {
-    _state = newState;
+    _mockState = newState;
     notifyListeners();
   }
 
   /// Simulate connection success
   void simulateConnected(StreamServer server, {List<RemoteWindow>? availableWindows}) {
-    _state = StreamConnectionState(
+    _mockState = StreamConnectionState(
       phase: ConnectionPhase.connected,
       server: server,
       connectedAt: DateTime.now(),
@@ -222,7 +241,7 @@ class MockStreamService extends ChangeNotifier {
 
   /// Simulate connection error
   void simulateError(String error) {
-    _state = _state.copyWith(
+    _mockState = _mockState.copyWith(
       phase: ConnectionPhase.error,
       error: error,
     );
@@ -231,57 +250,68 @@ class MockStreamService extends ChangeNotifier {
 
   /// Simulate receiving window list
   void simulateWindowList(List<RemoteWindow> windows) {
-    _state = _state.copyWith(availableWindows: windows);
+    _mockState = _mockState.copyWith(availableWindows: windows);
     notifyListeners();
   }
 
   /// Simulate a window being closed
   void simulateWindowClosed(int windowId) {
-    final updatedWindows = _state.subscribedWindows
+    final updatedWindows = _mockState.subscribedWindows
         .where((w) => w.id != windowId)
         .toList();
-    _state = _state.copyWith(subscribedWindows: updatedWindows);
+    _mockState = _mockState.copyWith(subscribedWindows: updatedWindows);
     notifyListeners();
   }
 }
 
-/// Mock preferences service for testing
-class MockPreferencesService extends ChangeNotifier {
-  List<StreamServer> _recentServers = [];
-  StreamServer? _preferredServer;
-  bool _autoConnect = false;
+/// Mock preferences service for testing - extends real PreferencesService
+class MockPreferencesService extends PreferencesService {
+  List<StreamServer> _mockRecentServers = [];
+  StreamServer? _mockPreferredServer;
+  bool _mockAutoConnect = false;
 
-  List<StreamServer> get recentServers => List.unmodifiable(_recentServers);
-  StreamServer? get preferredServer => _preferredServer;
-  bool get autoConnect => _autoConnect;
+  @override
+  List<StreamServer> get recentServers => List.unmodifiable(_mockRecentServers);
+  
+  @override
+  StreamServer? get preferredServer => _mockPreferredServer;
+  
+  @override
+  bool get autoConnect => _mockAutoConnect;
 
+  @override
   Future<void> init() async {
     // No-op for mock
   }
 
+  @override
   Future<void> addRecentServer(StreamServer server) async {
-    _recentServers.removeWhere((s) => s.id == server.id);
-    _recentServers.insert(0, server.copyWith(lastSeen: DateTime.now()));
+    _mockRecentServers.removeWhere((s) => s.id == server.id);
+    _mockRecentServers.insert(0, server.copyWith(lastSeen: DateTime.now()));
     notifyListeners();
   }
 
+  @override
   Future<void> removeRecentServer(String serverId) async {
-    _recentServers.removeWhere((s) => s.id == serverId);
+    _mockRecentServers.removeWhere((s) => s.id == serverId);
     notifyListeners();
   }
 
+  @override
   Future<void> clearRecentServers() async {
-    _recentServers.clear();
+    _mockRecentServers.clear();
     notifyListeners();
   }
 
+  @override
   Future<void> setPreferredServer(StreamServer? server) async {
-    _preferredServer = server;
+    _mockPreferredServer = server;
     notifyListeners();
   }
 
+  @override
   Future<void> setAutoConnect(bool value) async {
-    _autoConnect = value;
+    _mockAutoConnect = value;
     notifyListeners();
   }
 }

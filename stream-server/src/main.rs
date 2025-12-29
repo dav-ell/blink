@@ -28,6 +28,10 @@ async fn main() -> Result<()> {
 
     info!("Starting Blink Stream Server");
 
+    // Initialize ScreenCaptureKit bridge (required for Window Server access)
+    capture::initialize()?;
+    info!("ScreenCaptureKit bridge initialized");
+
     // Load configuration
     let config = Config::default();
     info!("Configuration loaded: port={}", config.port);

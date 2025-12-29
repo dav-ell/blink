@@ -18,7 +18,7 @@ use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
 
-pub use tracks::create_window_track;
+pub use tracks::{create_window_track, H264RtpPacketizer};
 
 /// Manages WebRTC peer connections and video tracks
 pub struct WebRtcManager {

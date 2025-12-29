@@ -22,12 +22,14 @@ pub enum MouseButton {
 
 /// Mouse action types
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum MouseAction {
     Click,
+    DoubleClick,
     Down,
     Up,
     Move,
+    Drag,
     Scroll,
 }
 
@@ -134,9 +136,28 @@ impl InputInjector {
                 debug!("Injected mouse move to ({}, {})", point.x, point.y);
             }
 
+            MouseAction::Drag => {
+                // Drag is a mouse move while button is held down
+                let cg_event = CGEvent::new_mouse_event(
+                    source,
+                    CGEventType::LeftMouseDragged,
+                    point,
+                    CGMouseButton::Left,
+                )
+                .map_err(|_| anyhow!("Failed to create mouse drag event"))?;
+
+                cg_event.post(CGEventTapLocation::HID);
+                debug!("Injected mouse drag to ({}, {})", point.x, point.y);
+            }
+
             MouseAction::Click => {
                 let button = event.button.unwrap_or(MouseButton::Left);
                 self.inject_click(&source, point, button)?;
+            }
+
+            MouseAction::DoubleClick => {
+                let button = event.button.unwrap_or(MouseButton::Left);
+                self.inject_double_click(&source, point, button)?;
             }
 
             MouseAction::Down => {
@@ -167,6 +188,45 @@ impl InputInjector {
         self.inject_mouse_down(source, point, button)?;
         self.inject_mouse_up(source, point, button)?;
         debug!("Injected {:?} click at ({}, {})", button, point.x, point.y);
+        Ok(())
+    }
+
+    fn inject_double_click(
+        &self,
+        source: &CGEventSource,
+        point: CGPoint,
+        button: MouseButton,
+    ) -> Result<()> {
+        // Double click requires setting click count on the events
+        let (down_type, up_type, cg_button) = match button {
+            MouseButton::Left => (CGEventType::LeftMouseDown, CGEventType::LeftMouseUp, CGMouseButton::Left),
+            MouseButton::Right => (CGEventType::RightMouseDown, CGEventType::RightMouseUp, CGMouseButton::Right),
+            MouseButton::Middle => (CGEventType::OtherMouseDown, CGEventType::OtherMouseUp, CGMouseButton::Center),
+        };
+
+        // First click
+        let down1 = CGEvent::new_mouse_event(source.clone(), down_type, point, cg_button)
+            .map_err(|_| anyhow!("Failed to create mouse down event"))?;
+        down1.set_integer_value_field(core_graphics::event::EventField::MOUSE_EVENT_CLICK_STATE, 1);
+        down1.post(CGEventTapLocation::HID);
+
+        let up1 = CGEvent::new_mouse_event(source.clone(), up_type, point, cg_button)
+            .map_err(|_| anyhow!("Failed to create mouse up event"))?;
+        up1.set_integer_value_field(core_graphics::event::EventField::MOUSE_EVENT_CLICK_STATE, 1);
+        up1.post(CGEventTapLocation::HID);
+
+        // Second click with click count = 2
+        let down2 = CGEvent::new_mouse_event(source.clone(), down_type, point, cg_button)
+            .map_err(|_| anyhow!("Failed to create mouse down event"))?;
+        down2.set_integer_value_field(core_graphics::event::EventField::MOUSE_EVENT_CLICK_STATE, 2);
+        down2.post(CGEventTapLocation::HID);
+
+        let up2 = CGEvent::new_mouse_event(source.clone(), up_type, point, cg_button)
+            .map_err(|_| anyhow!("Failed to create mouse up event"))?;
+        up2.set_integer_value_field(core_graphics::event::EventField::MOUSE_EVENT_CLICK_STATE, 2);
+        up2.post(CGEventTapLocation::HID);
+
+        debug!("Injected {:?} double-click at ({}, {})", button, point.x, point.y);
         Ok(())
     }
 
