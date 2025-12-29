@@ -262,3 +262,7 @@ README.md
 
 # Claude
 .claude/settings.local.json
+
+# Stream Server (Rust + Swift)
+stream-server/target/
+stream-server/swift/.build/
