@@ -142,6 +142,8 @@ class _TouchOverlayState extends State<TouchOverlay> {
     double adjustedY = contentPosition.dy;
     double effectiveWidth = size.width;
     double effectiveHeight = size.height;
+    double letterboxOffsetX = 0;
+    double letterboxOffsetY = 0;
     
     if (widget.videoAspectRatio != null && widget.videoAspectRatio! > 0) {
       final widgetAspectRatio = size.width / size.height;
@@ -150,22 +152,34 @@ class _TouchOverlayState extends State<TouchOverlay> {
       if (videoAspectRatio > widgetAspectRatio) {
         // Video is wider - letterboxed top/bottom (black bars on top and bottom)
         final videoHeight = size.width / videoAspectRatio;
-        final letterboxOffset = (size.height - videoHeight) / 2;
-        adjustedY = contentPosition.dy - letterboxOffset;
+        letterboxOffsetY = (size.height - videoHeight) / 2;
+        adjustedY = contentPosition.dy - letterboxOffsetY;
         effectiveHeight = videoHeight;
       } else {
         // Video is taller - pillarboxed left/right (black bars on sides)
         final videoWidth = size.height * videoAspectRatio;
-        final pillarboxOffset = (size.width - videoWidth) / 2;
-        adjustedX = contentPosition.dx - pillarboxOffset;
+        letterboxOffsetX = (size.width - videoWidth) / 2;
+        adjustedX = contentPosition.dx - letterboxOffsetX;
         effectiveWidth = videoWidth;
       }
     }
     
-    return Offset(
+    final normalized = Offset(
       (adjustedX / effectiveWidth).clamp(0.0, 1.0),
       (adjustedY / effectiveHeight).clamp(0.0, 1.0),
     );
+    
+    // #region agent log
+    debugPrint('[CLICK] tap=(${localPosition.dx.toStringAsFixed(1)}, ${localPosition.dy.toStringAsFixed(1)}) '
+        'widget=(${size.width.toStringAsFixed(0)}x${size.height.toStringAsFixed(0)}) '
+        'scale=$_scale offset=(${_offset.dx.toStringAsFixed(1)}, ${_offset.dy.toStringAsFixed(1)}) '
+        'videoAR=${widget.videoAspectRatio?.toStringAsFixed(3)} '
+        'letterbox=(${letterboxOffsetX.toStringAsFixed(1)}, ${letterboxOffsetY.toStringAsFixed(1)}) '
+        'effective=(${effectiveWidth.toStringAsFixed(0)}x${effectiveHeight.toStringAsFixed(0)}) '
+        'normalized=(${normalized.dx.toStringAsFixed(4)}, ${normalized.dy.toStringAsFixed(4)})');
+    // #endregion
+    
+    return normalized;
   }
 
   void _handleTapDown(TapDownDetails details) {
